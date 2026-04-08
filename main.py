@@ -67,6 +67,7 @@ class RingboundGame:
             "wormtongue_suit": None,
             "legolas_bonus": 0,
             "balrog_active": None,
+            "gandalf_ranks": [],
         }
 
     def reset_game_state(self):
@@ -151,6 +152,13 @@ class RingboundGame:
                 ranks.append(card.data["rank"])
         return ranks
 
+    def get_allowed_attack_ranks(self):
+        ranks = list(self.get_reinforce_ranks())
+        for rank in self.round_effects["gandalf_ranks"]:
+            if rank not in ranks:
+                ranks.append(rank)
+        return ranks
+
     def setup_game(self):
         self.realm_deck = list(self.db["realm_cards"])
         self.hero_deck = list(self.db["hero_cards"])
@@ -177,11 +185,11 @@ class RingboundGame:
 
         start_x = 40
         for index in range(10):
-            self.realm_draft_visuals.append(CardUI(self.realm_deck.pop(), start_x + (index * 120), 150))
+            self.realm_draft_visuals.append(CardUI(self.realm_deck.pop(), start_x + (index * 120), 280))
 
         start_x = 160
         for index in range(8):
-            self.hero_draft_visuals.append(CardUI(self.hero_deck.pop(), start_x + (index * 120), 400))
+            self.hero_draft_visuals.append(CardUI(self.hero_deck.pop(), start_x + (index * 120), 500))
 
         self.status_message = f"{self.current_drafter} drafts first."
 
@@ -234,14 +242,17 @@ class RingboundGame:
         return False
 
     def can_attack_with_card(self, attack_card):
+        forced_ranks = self.round_effects["gandalf_ranks"]
         if self.play_phase == "ATTACK":
+            if forced_ranks:
+                return attack_card["rank"] in forced_ranks
             return True
         if self.play_phase != "REINFORCE":
             return False
         if self.round_effects["legolas_bonus"] > 0:
             return True
 
-        valid_ranks = self.get_reinforce_ranks()
+        valid_ranks = self.get_allowed_attack_ranks()
         if not valid_ranks:
             return True
         return attack_card["rank"] in valid_ranks
@@ -457,15 +468,17 @@ class RingboundGame:
         if attack_card is None:
             return
 
+        played_ranks = self.get_reinforce_ranks()
         removed_attack = self.table_attacks.pop()
         self.discard_card(removed_attack.data)
+        self.round_effects["gandalf_ranks"] = played_ranks
 
         if self.player_has_no_cards(self.defender) and len(self.table_attacks) == len(self.table_defenses):
             self.end_round(defender_took_wound=False, pickup_defenses=False)
             return
 
         self.sync_turn_after_table_change()
-        self.status_message = "Gandalf cancels the latest non-trump attack."
+        self.status_message = "Gandalf cancels the latest non-trump attack. The attacker must continue with a played rank."
 
     def resolve_boromir(self):
         if self.get_current_attack_card() is None:
@@ -576,6 +589,8 @@ class RingboundGame:
 
         if self.play_phase in ["ATTACK", "REINFORCE"]:
             self.table_attacks.append(visual_card)
+            if self.round_effects["gandalf_ranks"]:
+                self.round_effects["gandalf_ranks"] = []
             if self.round_effects["legolas_bonus"] > 0:
                 self.round_effects["legolas_bonus"] -= 1
 
@@ -782,6 +797,17 @@ class RingboundGame:
         self.screen.blit(turn, (WINDOW_WIDTH // 2 - turn.get_width() // 2, 30))
         self.screen.blit(p1, (50, 50))
         self.screen.blit(p2, (WINDOW_WIDTH - 250, 50))
+
+        draft_trump_visual = CardUI(self.trump_card, 40, 92)
+        draft_trump_visual.width = 90
+        draft_trump_visual.height = 130
+        draft_trump_visual.rect = pygame.Rect(draft_trump_visual.x, draft_trump_visual.y, draft_trump_visual.width, draft_trump_visual.height)
+        draft_trump_visual.draw(self.screen)
+
+        trump_label = self.font_small.render("Trump Card", True, GOLD)
+        trump_detail = self.font_tiny.render("This card sets the trump suit for the game.", True, WHITE)
+        self.screen.blit(trump_label, (40, 230))
+        self.screen.blit(trump_detail, (40, 256))
 
         for card in self.realm_draft_visuals:
             card.draw(self.screen)
