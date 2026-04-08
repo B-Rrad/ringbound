@@ -1,0 +1,256 @@
+{
+  "realm_cards": [
+    {
+      "id": "gondor_6",
+      "name": "6 of Gondor",
+      "suit": "Gondor",
+      "rank": 6,
+      "image": "gondor_6.png"
+    },
+    {
+      "id": "gondor_7",
+      "name": "7 of Gondor",
+      "suit": "Gondor",
+      "rank": 7,
+      "image": "gondor_7.png"
+    },
+    {
+      "id": "gondor_8",
+      "name": "8 of Gondor",
+      "suit": "Gondor",
+      "rank": 8,
+      "image": "gondor_8.png"
+    },
+    {
+      "id": "gondor_9",
+      "name": "9 of Gondor",
+      "suit": "Gondor",
+      "rank": 9,
+      "image": "gondor_9.png"
+    },
+    {
+      "id": "gondor_10",
+      "name": "10 of Gondor",
+      "suit": "Gondor",
+      "rank": 10,
+      "image": "gondor_10.png"
+    },
+    {
+      "id": "gondor_jack",
+      "name": "Jack of Gondor",
+      "suit": "Gondor",
+      "rank": 11,
+      "image": "gondor_jack.png"
+    },
+    {
+      "id": "gondor_queen",
+      "name": "Queen of Gondor",
+      "suit": "Gondor",
+      "rank": 12,
+      "image": "gondor_queen.png"
+    },
+    {
+      "id": "gondor_king",
+      "name": "King of Gondor",
+      "suit": "Gondor",
+      "rank": 13,
+      "image": "gondor_king.png"
+    },
+    {
+      "id": "gondor_ace",
+      "name": "Ace of Gondor",
+      "suit": "Gondor",
+      "rank": 14,
+      "image": "gondor_ace.png"
+    },
+    {
+      "id": "shire_6",
+      "name": "6 of Shire",
+      "suit": "Shire",
+      "rank": 6,
+      "image": "shire_6.png"
+    },
+    {
+      "id": "shire_7",
+      "name": "7 of Shire",
+      "suit": "Shire",
+      "rank": 7,
+      "image": "shire_7.png"
+    },
+    {
+      "id": "shire_8",
+      "name": "8 of Shire",
+      "suit": "Shire",
+      "rank": 8,
+      "image": "shire_8.png"
+    },
+    {
+      "id": "shire_9",
+      "name": "9 of Shire",
+      "suit": "Shire",
+      "rank": 9,
+      "image": "shire_9.png"
+    },
+    {
+      "id": "shire_10",
+      "name": "10 of Shire",
+      "suit": "Shire",
+      "rank": 10,
+      "image": "shire_10.png"
+    },
+    {
+      "id": "shire_jack",
+      "name": "Jack of Shire",
+      "suit": "Shire",
+      "rank": 11,
+      "image": "shire_jack.png"
+    },
+    {
+      "id": "shire_queen",
+      "name": "Queen of Shire",
+      "suit": "Shire",
+      "rank": 12,
+      "image": "shire_queen.png"
+    },
+    {
+      "id": "shire_king",
+      "name": "King of Shire",
+      "suit": "Shire",
+      "rank": 13,
+      "image": "shire_king.png"
+    },
+    {
+      "id": "shire_ace",
+      "name": "Ace of Shire",
+      "suit": "Shire",
+      "rank": 14,
+      "image": "shire_ace.png"
+    },
+    {
+      "id": "rohan_6",
+      "name": "6 of Rohan",
+      "suit": "Rohan",
+      "rank": 6,
+      "image": "rohan_6.png"
+    },
+    {
+      "id": "rohan_7",
+      "name": "7 of Rohan",
+      "suit": "Rohan",
+      "rank": 7,
+      "image": "rohan_7.png"
+    },
+    {
+      "id": "rohan_8",
+      "name": "8 of Rohan",
+      "suit": "Rohan",
+      "rank": 8,
+      "image": "rohan_8.png"
+    },
+    {
+      "id": "rohan_9",
+      "name": "9 of Rohan",
+      "suit": "Rohan",
+      "rank": 9,
+      "image": "rohan_9.png"
+    },
+    {
+      "id": "rohan_10",
+      "name": "10 of Rohan",
+      "suit": "Rohan",
+      "rank": 10,
+      "image": "rohan_10.png"
+    },
+    {
+      "id": "rohan_jack",
+      "name": "Jack of Rohan",
+      "suit": "Rohan",
+      "rank": 11,
+      "image": "rohan_jack.png"
+    },
+    {
+      "id": "rohan_queen",
+      "name": "Queen of Rohan",
+      "suit": "Rohan",
+      "rank": 12,
+      "image": "rohan_queen.png"
+    },
+    {
+      "id": "rohan_king",
+      "name": "King of Rohan",
+      "suit": "Rohan",
+      "rank": 13,
+      "image": "rohan_king.png"
+    },
+    {
+      "id": "rohan_ace",
+      "name": "Ace of Rohan",
+      "suit": "Rohan",
+      "rank": 14,
+      "image": "rohan_ace.png"
+    },
+    {
+      "id": "mordor_6",
+      "name": "6 of Mordor",
+      "suit": "Mordor",
+      "rank": 6,
+      "image": "mordor_6.png"
+    },
+    {
+      "id": "mordor_7",
+      "name": "7 of Mordor",
+      "suit": "Mordor",
+      "rank": 7,
+      "image": "mordor_7.png"
+    },
+    {
+      "id": "mordor_8",
+      "name": "8 of Mordor",
+      "suit": "Mordor",
+      "rank": 8,
+      "image": "mordor_8.png"
+    },
+    {
+      "id": "mordor_9",
+      "name": "9 of Mordor",
+      "suit": "Mordor",
+      "rank": 9,
+      "image": "mordor_9.png"
+    },
+    {
+      "id": "mordor_10",
+      "name": "10 of Mordor",
+      "suit": "Mordor",
+      "rank": 10,
+      "image": "mordor_10.png"
+    },
+    {
+      "id": "mordor_jack",
+      "name": "Jack of Mordor",
+      "suit": "Mordor",
+      "rank": 11,
+      "image": "mordor_jack.png"
+    },
+    {
+      "id": "mordor_queen",
+      "name": "Queen of Mordor",
+      "suit": "Mordor",
+      "rank": 12,
+      "image": "mordor_queen.png"
+    },
+    {
+      "id": "mordor_king",
+      "name": "King of Mordor",
+      "suit": "Mordor",
+      "rank": 13,
+      "image": "mordor_king.png"
+    },
+    {
+      "id": "mordor_ace",
+      "name": "Ace of Mordor",
+      "suit": "Mordor",
+      "rank": 14,
+      "image": "mordor_ace.png"
+    }
+  ]
+}

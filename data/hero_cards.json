@@ -1,0 +1,88 @@
+{
+  "hero_cards": [
+    {
+      "id": "aragorn",
+      "name": "Aragorn",
+      "faction": "Fellowship",
+      "power": "Return one played attack card to your hand.",
+      "image": "aragorn.png"
+    },
+    {
+      "id": "legolas",
+      "name": "Legolas",
+      "faction": "Fellowship",
+      "power": "Add one attack card regardless of rank (play with card).",
+      "image": "legolas.png"
+    },
+    {
+      "id": "gandalf",
+      "name": "Gandalf",
+      "faction": "Fellowship",
+      "power": "Cancel one non-trump attack (standalone).",
+      "image": "gandalf.png"
+    },
+    {
+      "id": "galadriel",
+      "name": "Galadriel",
+      "faction": "Fellowship",
+      "power": "Heal two wounds (any time).",
+      "image": "galadriel.png"
+    },
+    {
+      "id": "frodo",
+      "name": "Frodo",
+      "faction": "Fellowship",
+      "power": "Disable trump suit for one round.",
+      "image": "frodo.png"
+    },
+    {
+      "id": "boromir",
+      "name": "Boromir",
+      "faction": "Fellowship",
+      "power": "Auto-defend one attack; attacker discards one random card.",
+      "image": "boromir.png"
+    },
+    {
+      "id": "nazgul",
+      "name": "Nazgul",
+      "faction": "Shadow",
+      "power": "Defender may use only trump cards (standalone).",
+      "image": "nazgul.png"
+    },
+    {
+      "id": "saruman",
+      "name": "Saruman",
+      "faction": "Shadow",
+      "power": "Exchange one card with defender’s highest or trump card (start of round).",
+      "image": "saruman.png"
+    },
+    {
+      "id": "sauron",
+      "name": "Sauron",
+      "faction": "Shadow",
+      "power": "View opponent’s hand (start of round).",
+      "image": "sauron.png"
+    },
+    {
+      "id": "balrog",
+      "name": "Balrog",
+      "faction": "Shadow",
+      "power": "Inflict one wound even if fully defended (end of round, play with card).",
+      "image": "balrog.png"
+    },
+    {
+      "id": "gollum",
+      "name": "Gollum",
+      "faction": "Shadow",
+      "power": "Defender may redefine trump for one round.",
+      "image": "gollum.png"
+    },
+    {
+      "id": "wormtongue",
+      "name": "Wormtongue",
+      "faction": "Shadow",
+      "power": "Name a suit; defender cannot play that suit this round.",
+      "image": "wormtongue.png"
+    }
+  ]
+}

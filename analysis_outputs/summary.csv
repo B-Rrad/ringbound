@@ -1,0 +1,7 @@
+experiment,label_a,label_b,games,label_a_wins,label_b_wins,label_a_win_rate,p1_win_rate,first_attacker_win_rate,avg_rounds,avg_p1_wounds,avg_p2_wounds,tie_break_games
+Greedy_vs_Greedy,Greedy,Greedy,2000,,,,0.51,0.469,17.206,1.116,1.1365,0
+Greedy_vs_Strategic,Greedy,Strategic,1500,834,666,0.556,0.48133333333333334,0.4726666666666667,17.360666666666667,1.2746666666666666,1.2726666666666666,0
+Random_vs_Greedy,Random,Greedy,1500,239,1261,0.15933333333333333,0.498,0.48133333333333334,17.788666666666668,2.0913333333333335,2.15,0
+Random_vs_Random,Random,Random,2000,,,,0.4885,0.486,18.248,2.845,2.7565,0
+Random_vs_Strategic,Random,Strategic,1500,193,1307,0.12866666666666668,0.514,0.5066666666666667,17.166,2.2773333333333334,2.312,0
+Strategic_vs_Strategic,Strategic,Strategic,2000,,,,0.502,0.467,16.229,1.489,1.551,0

@@ -1,0 +1,70 @@
+<html><body style='font-family:Arial;max-width:900px;margin:40px auto;line-height:1.5'># Ringbound Balance Report Draft<br/>
+<br/>
+## Introduction<br/>
+<br/>
+Ringbound is a two-player card game that combines alternating draft choices, attack-defense rounds, a wound track to six, and hero cards with special powers. Each simulated game follows the current implementation: players draft from a visible pool of realm cards and hero cards, a trump suit is revealed, and rounds continue until one player reaches six wounds or the endgame runs out of playable resources.<br/>
+<br/>
+Because Ringbound is a custom project, there is no outside published balance study for this exact ruleset. The appropriate analysis is Monte Carlo simulation with self-play and cross-play AI opponents. If equal-skill players split wins close to 50/50, while stronger AIs still beat weaker ones, then the game can be described as reasonably balanced without being strategically empty.<br/>
+<br/>
+This report uses 10,500 simulated games across same-skill self-play and cross-skill matchups. The supporting workbook contains the summary tables, role-bias checks, hero-usage totals, and the raw game log used to compute the results.<br/>
+<br/>
+## Rules<br/>
+<br/>
+Ringbound is currently implemented as a two-player card game with a realm deck and a hero deck. The realm deck contains the standard playing cards for four suits in the game world, and the hero deck contains one copy of each special character ability.<br/>
+<br/>
+The game begins with each player receiving one realm card. Those two cards determine turn order for the draft: the player with the higher card drafts first, while the player with the lower card becomes the first attacker once play begins. After that, one additional realm card is revealed as the trump suit for the match. The game then presents a shared draft pool of 10 more realm cards and 8 hero cards, and the players alternate taking one visible card at a time until the draft pool is empty.<br/>
+<br/>
+After drafting, normal play happens in attack-defense rounds. The attacker leads with one realm card. The defender must beat the newest attack with a higher card of the same suit or with a valid trump card. If the defense succeeds, the attacker may reinforce by adding another realm card whose rank matches any rank already on the table. The current implementation also includes the option for the defender to concede instead of defending, which immediately gives that player one wound.<br/>
+<br/>
+At the end of a round, the result determines who attacks next. If the defender successfully answers the attack, the roles swap and the old defender becomes the new attacker. If the defender concedes and takes a wound, the attacker keeps the initiative for the next round. In the implemented version, attack cards are discarded at the end of the round, while a conceding defender keeps any defense cards they already played. After the round, both players draw realm cards back up to six whenever the realm deck still has cards remaining.<br/>
+<br/>
+Hero cards stay in a separate hand and can be played only in situations allowed by their rules and by the current game phase. Fellowship heroes mainly provide protection or flexibility: Aragorn recovers an attack card, Legolas allows one out-of-rank reinforcement, Gandalf cancels a non-trump attack, Galadriel heals wounds, Frodo disables trump for the round, and Boromir auto-defends one attack while forcing a random discard from the attacker. Shadow heroes apply pressure or disruption: Nazgul forces trump-only defense, Saruman swaps for the defender's best realm card, Sauron reveals the opponent's hand, Balrog still inflicts a wound through a full defense, Gollum changes the trump suit for one round, and Wormtongue forbids one suit for the defender.<br/>
+<br/>
+The implemented win condition has two parts. A player loses immediately upon taking six wounds. If the realm deck is empty, the game instead ends when one player has emptied all remaining cards from hand, which means that player wins by going out first.<br/>
+<br/>
+## Results<br/>
+<br/>
+### Experimental design<br/>
+<br/>
+Three AI policies were tested: Random, Greedy, and Strategic. Random chooses mostly legal moves without planning. Greedy uses straightforward heuristics such as cheap defense, healing at high wound counts, and common-sense hero timing. Strategic adds extra drafting and information-based rules, although the experiment results show that these extra heuristics are not automatically stronger than the Greedy policy. The study includes 2,000 self-play games for each skill level and 1,500 games for each cross-skill matchup.<br/>
+<br/>
+### Balance evidence<br/>
+<br/>
+- In Greedy_vs_Greedy, seat P1 won 51.0% of 2,000 games and first attacker won 46.9%.<br/>
+- In Random_vs_Random, seat P1 won 48.85% of 2,000 games and first attacker won 48.6%.<br/>
+- In Strategic_vs_Strategic, seat P1 won 50.2% of 2,000 games and first attacker won 46.7%.<br/>
+<br/>
+The largest measured role bias across all experiments was 3.3 percentage points away from a perfectly even 50/50 split. That suggests a modest but not overwhelming role effect: first attacker underperformed slightly in the Greedy and Strategic self-play tests, but the seat and opening-role numbers still stayed close enough to 50/50 to describe the game as reasonably balanced overall.<br/>
+<br/>
+### Skill sensitivity<br/>
+<br/>
+- In Greedy_vs_Strategic, Greedy won 55.6% of 1,500 games against Strategic.<br/>
+- In Random_vs_Greedy, Random won 15.93% of 1,500 games against Greedy.<br/>
+- In Random_vs_Strategic, Random won 12.87% of 1,500 games against Strategic.<br/>
+<br/>
+These cross-skill results matter because a balanced game should still reward better choices. If all matchups stayed near 50/50, the game would probably be too random. Instead, the weaker Random policy loses badly to both of the stronger heuristic policies, while Greedy and Strategic are closer to each other. That suggests the game contains real decision-making depth even though the exact AI ranking depends on how the heuristics are written.<br/>
+<br/>
+### Workbook interpretation<br/>
+<br/>
+Each spreadsheet tab supports a different part of the argument:<br/>
+<br/>
+- `Summary` contains the main experiment table: win rates, round length, wound averages, and tiebreak frequency.<br/>
+- `RoleBalance` isolates seat and opening-role effects and adds an approximate 95% confidence interval.<br/>
+- `HeroUsage` reports how often each hero was drafted and used, plus how often those uses occurred in games the user eventually won.<br/>
+- `RawGames` is the full per-game log used to compute the summary statistics.<br/>
+<br/>
+Strategic self-play still stayed near even at 50.2% P1 wins, while Random versus Strategic was clearly separated, with Random winning only 12.87% of those games.<br/>
+<br/>
+The most-used hero in the study was `nazgul`, drafted 7027 times and used 6656 times.<br/>
+<br/>
+Only 0 of 10,500 games required the max-round tiebreak safeguard, so the conclusions are not being driven by unresolved stalls.<br/>
+<br/>
+## Conclusion<br/>
+<br/>
+The introduction claimed that Ringbound should be considered balanced if equal-skill players split wins near 50% while stronger play still improves results. The simulations support that claim. Same-skill self-play remained close to even, role bias stayed modest rather than overwhelming, and the stronger heuristic policies defeated the Random policy often enough to show that the game rewards skill. Based on these experiments, the current implementation of Ringbound appears reasonably balanced for a class-project prototype.<br/>
+<br/>
+## Notes and assumptions<br/>
+<br/>
+- The simulator follows the current implemented rules, including the present hero behaviors and draft structure.<br/>
+- A max-round tiebreak was included only as a safety guard for unusually long games.<br/>
+- This is practical evidence of balance, not a proof of perfect balance. Human playtesting would still be useful.</body></html>
