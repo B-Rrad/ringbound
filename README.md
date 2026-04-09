@@ -37,9 +37,10 @@ ringbound/
 
 ## Run The Prebuilt Executable
 
-1. Download or clone this repository.
-2. Open the `release` folder.
-3. Double-click `Ringbound.exe`.
+1. Download using GitHub's 'Download ZIP' option.
+2. Extract the ZIP.
+3. Open the `release` folder.
+4. Double-click `Ringbound.exe`.
 
 ## Run From Source
 
