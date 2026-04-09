@@ -33,13 +33,14 @@ class RingboundGame:
         self.reset_game_state()
 
     def load_database(self):
+        base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
         try:
-            with open(os.path.join("data", "realm_cards.json"), "r", encoding="utf-8") as f:
+            with open(os.path.join(base_path, "data", "realm_cards.json"), "r", encoding="utf-8") as f:
                 self.db["realm_cards"] = json.load(f)["realm_cards"]
         except FileNotFoundError:
             pass
         try:
-            with open(os.path.join("data", "hero_cards.json"), "r", encoding="utf-8") as f:
+            with open(os.path.join(base_path, "data", "hero_cards.json"), "r", encoding="utf-8") as f:
                 self.db["hero_cards"] = json.load(f)["hero_cards"]
         except FileNotFoundError:
             pass
