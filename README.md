@@ -10,7 +10,7 @@ This repository includes:
 - A prebuilt Windows executable at `release/Ringbound.exe`
 - Game data files in `data/`
 
-The gameplay video required for final course submission is not included yet.
+The gameplay video can be found here: https://youtu.be/C1FrNUbSaL8
 
 ## Repository Layout
 
