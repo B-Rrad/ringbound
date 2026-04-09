@@ -345,6 +345,10 @@ class RingboundGame:
             self.play_phase = "REINFORCE"
             self.current_player = self.attacker
             self.status_message = f"{self.attacker} may reinforce or end the attack."
+        elif self.round_effects["gandalf_ranks"]:
+            self.play_phase = "REINFORCE"
+            self.current_player = self.attacker
+            self.status_message = f"{self.attacker} must continue with a played rank or end the attack."
         else:
             self.play_phase = "ATTACK"
             self.current_player = self.attacker
@@ -479,7 +483,7 @@ class RingboundGame:
             return
 
         self.sync_turn_after_table_change()
-        self.status_message = "Gandalf cancels the latest non-trump attack. The attacker must continue with a played rank."
+        self.status_message = "Gandalf cancels the latest non-trump attack. The attacker must continue with a played rank or end the attack."
 
     def resolve_boromir(self):
         if self.get_current_attack_card() is None:
