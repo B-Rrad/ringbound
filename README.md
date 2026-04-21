@@ -1,7 +1,6 @@
 # Ringbound
 
-this is a test
-`Ringbound` is a local two-player fantasy card game built with `pygame`. Players draft realm cards and hero cards, then battle through attack/defense rounds until one player reaches 6 wounds or empties their hand after the deck runs out.
+`Ringbound` is a local two-player fantasy card game built with `pygame`. Players draft realm cards and hero cards, then battle through attack/defense rounds until one player reaches 6 wounds or wins the realm-deck endgame.
 
 ## Submission Contents
 
@@ -63,7 +62,21 @@ python main.py
 - Mouse only
 - Click on the splash screen to begin the draft
 - Click cards to draft or play them
-- Click on-screen buttons such as `Take Wound`, `End Attack`, or suit choices when prompted
+- Click on-screen buttons such as `Take Wound`, `End Attack`, `Pass Attack`, `P1 Heal`, `P2 Heal`, or suit choices when prompted
+
+## Gameplay Rules
+
+- Each player finishes the draft with a maximum of `6` realm cards and `4` hero cards. The opening realm card counts toward that limit.
+- After a defended round, the defender becomes the next attacker. If the defender takes a wound, the attacker keeps the initiative.
+- When the realm deck is empty, drawing stops. The endgame is then decided by empty realm hands first, then fewer wounds, then fewer total remaining cards.
+
+## Hero Timing Notes
+
+- `Galadriel` may be used at any time while that player has wounds remaining.
+- `Saruman` and `Sauron` are start-of-round attack tools.
+- `Gandalf` and `Boromir` are defensive responses.
+- `Legolas` and `Balrog` must be played together with a realm attack card.
+- `Gollum` lets the defender choose the temporary trump suit for the round.
 
 ## Project Notes
 
@@ -72,6 +85,7 @@ python main.py
 - `settings.py` contains shared window, color, and state constants.
 - `balance_analysis.py` is a separate analysis utility and is not required to play the game.
 - The game loads `36` realm cards and `12` hero cards from JSON files in `data/`.
+- The game-over screen includes a short reason so special endgame outcomes and tiebreaks are visible to the player.
 
 ## Rebuild The Executable
 
