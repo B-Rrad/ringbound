@@ -7,11 +7,12 @@ import pygame
 
 from settings import *
 from ui_elements import ButtonUI, CardUI
+from ui import UIController
 
 class RingboundGame:
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
         pygame.display.set_caption("Ringbound: Battle for the One Ring")
         self.clock = pygame.time.Clock()
         
@@ -30,6 +31,7 @@ class RingboundGame:
         self.suit_buttons = {}
         self.build_suit_buttons()
 
+        self.ui = UIController((WINDOW_WIDTH, WINDOW_HEIGHT), os.path.dirname(os.path.abspath(__file__)))
         self.reset_game_state()
 
     def load_database(self):
@@ -694,39 +696,85 @@ class RingboundGame:
                 pygame.quit()
                 sys.exit()
 
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mouse_pos = pygame.mouse.get_pos()
+            if event.type == pygame.VIDEORESIZE:
+                resized_w = max(1024, event.w)
+                resized_h = max(600, event.h)
+                self.screen = pygame.display.set_mode((resized_w, resized_h), pygame.RESIZABLE)
+                self.ui.on_resize(resized_w, resized_h)
 
-                if self.state == STATE_SPLASH:
-                    self.setup_game()
-                    self.state = STATE_DRAFTING
+            intent = self.ui.handle_event(event)
+            if intent is not None:
+                self.handle_intent(intent)
 
-                elif self.state == STATE_GAMEOVER:
-                    self.reset_game_state()
+    def handle_intent(self, intent):
+        action = intent.action
+        payload = intent.payload
 
-                elif self.state == STATE_DRAFTING:
-                    for visual_card in self.realm_draft_visuals[:]:
-                        if visual_card.is_clicked(mouse_pos):
-                            self.attempt_draft(visual_card, "realm")
-                            break
-                    for visual_card in self.hero_draft_visuals[:]:
-                        if visual_card.is_clicked(mouse_pos):
-                            self.attempt_draft(visual_card, "hero")
-                            break
+        if action == "start_game" and self.state == STATE_SPLASH:
+            self.setup_game()
+            self.state = STATE_DRAFTING
+            return
 
-                elif self.state == STATE_PLAYING:
-                    if self.handle_pending_click(mouse_pos):
-                        continue
+        if action == "restart_game" and self.state == STATE_GAMEOVER:
+            self.reset_game_state()
+            return
 
-                    for visual_card in self.active_hand_visuals[:]:
-                        if visual_card.is_clicked(mouse_pos):
-                            self.handle_hand_card_click(visual_card)
-                            break
+        if action == "pick_draft_card" and self.state == STATE_DRAFTING:
+            visual_card = payload.get("visual_card")
+            card_type = payload.get("card_type")
+            if visual_card is not None and card_type in ("realm", "hero"):
+                self.attempt_draft(visual_card, card_type)
+            return
 
-                    if self.play_phase == "DEFEND" and self.pending_action is None and self.wound_btn.is_clicked(mouse_pos):
-                        self.concede_defense()
-                    elif self.play_phase == "REINFORCE" and self.pending_action is None and self.end_atk_btn.is_clicked(mouse_pos):
-                        self.end_round(defender_took_wound=False, pickup_defenses=False)
+        if action == "select_aragorn_target" and self.state == STATE_PLAYING and self.pending_action is not None:
+            if self.pending_action.get("type") == "aragorn_return":
+                attack_visual = payload.get("attack_visual")
+                if attack_visual is not None:
+                    self.resolve_aragorn(attack_visual)
+            return
+
+        if action == "choose_suit" and self.state == STATE_PLAYING and self.pending_action is not None:
+            if self.pending_action.get("type") == "choose_suit":
+                suit = payload.get("suit")
+                if suit in self.all_suits:
+                    self.resolve_suit_choice(suit)
+            return
+
+        if action == "select_hand_card" and self.state == STATE_PLAYING:
+            if self.pending_action is not None and self.pending_action.get("type") in ("aragorn_return", "choose_suit"):
+                return
+            visual_card = payload.get("visual_card")
+            if visual_card is not None:
+                self.handle_hand_card_click(visual_card)
+            return
+
+        if action == "concede_defense" and self.state == STATE_PLAYING:
+            if self.play_phase == "DEFEND" and self.pending_action is None:
+                self.concede_defense()
+            return
+
+        if action == "end_attack" and self.state == STATE_PLAYING:
+            if self.play_phase == "REINFORCE" and self.pending_action is None:
+                self.end_round(defender_took_wound=False, pickup_defenses=False)
+            return
+
+        if action == "confirm_selection":
+            resolved = self.ui.resolve_space_intent()
+            if resolved is not None:
+                self.handle_intent(resolved)
+            return
+
+        if action == "request_redraw":
+            return
+
+        if action == "pause_confirm_yes":
+            self.ui.input_handler.pause_confirm = False
+            self.reset_game_state()
+            return
+
+        if action == "pause_confirm_no":
+            self.ui.input_handler.pause_confirm = False
+            return
 
     def handle_pending_click(self, mouse_pos):
         if self.pending_action is None:
@@ -947,14 +995,7 @@ class RingboundGame:
     def run(self):
         while True:
             self.handle_events()
-            if self.state == STATE_SPLASH:
-                self.draw_splash_screen()
-            elif self.state == STATE_DRAFTING:
-                self.draw_drafting_ui()
-            elif self.state == STATE_PLAYING:
-                self.draw_playing_ui()
-            elif self.state == STATE_GAMEOVER:
-                self.draw_game_over_screen()
+            self.ui.draw(self.screen, self)
             pygame.display.flip()
             self.clock.tick(FPS)
 
