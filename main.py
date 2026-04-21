@@ -7,6 +7,7 @@ import pygame
 
 from settings import *
 from ui_elements import ButtonUI, CardUI
+from ai_players import EasyAI, MediumAI, HardAI, _card_data
 
 class RingboundGame:
     def __init__(self):
@@ -29,6 +30,13 @@ class RingboundGame:
         self.end_atk_btn = ButtonUI(1020, 260, 160, 50, "End Attack", BLUE)
         self.suit_buttons = {}
         self.build_suit_buttons()
+
+        self.easy_btn = ButtonUI(WINDOW_WIDTH // 2 - 120, 300, 240, 55, "Easy", (60, 160, 60))
+        self.medium_btn = ButtonUI(WINDOW_WIDTH // 2 - 120, 380, 240, 55, "Medium", (180, 160, 40))
+        self.hard_btn = ButtonUI(WINDOW_WIDTH // 2 - 120, 460, 240, 55, "Hard", (180, 50, 50))
+
+        self.ai_opponent = None
+        self.ai_timer = 0
 
         self.reset_game_state()
 
@@ -104,7 +112,8 @@ class RingboundGame:
         self.round_effects = self.new_round_effects()
         self.pending_action = None
         self.revealed_hand = None
-        self.status_message = "Click to start the draft."
+        self.ai_timer = 0
+        self.status_message = "Click to start."
 
     def get_player_realm_hand(self, player):
         return self.p1_hand if player == "P1" else self.p2_hand
@@ -223,6 +232,7 @@ class RingboundGame:
             self.update_hand_visuals()
             self.state = STATE_PLAYING
             self.status_message = f"{self.attacker} opens the first attack."
+            self.schedule_ai()
 
     def can_defend_with_card(self, defense_card, attack_card):
         if attack_card is None:
@@ -467,6 +477,7 @@ class RingboundGame:
         self.check_game_over()
         if self.state != STATE_GAMEOVER:
             self.update_hand_visuals()
+            self.schedule_ai()
 
     def resolve_gandalf(self):
         attack_card = self.get_current_attack_card()
@@ -484,6 +495,7 @@ class RingboundGame:
 
         self.sync_turn_after_table_change()
         self.status_message = "Gandalf cancels the latest non-trump attack. The attacker must continue with a played rank or end the attack."
+        self.schedule_ai()
 
     def resolve_boromir(self):
         if self.get_current_attack_card() is None:
@@ -509,6 +521,7 @@ class RingboundGame:
 
         self.play_phase = "REINFORCE"
         self.current_player = self.attacker
+        self.schedule_ai()
 
     def resolve_suit_choice(self, suit):
         hero_card = self.pending_action["hero"]
@@ -525,6 +538,7 @@ class RingboundGame:
 
         self.pending_action = None
         self.update_hand_visuals()
+        self.schedule_ai()
 
     def resolve_aragorn(self, attack_visual):
         owner = self.pending_action["owner"]
@@ -551,6 +565,7 @@ class RingboundGame:
         self.sync_turn_after_table_change()
         self.status_message = "Aragorn returns an attack card to your hand."
         self.update_hand_visuals()
+        self.schedule_ai()
 
     def resolve_saruman_exchange(self, chosen_card):
         hero_card = self.pending_action["hero"]
@@ -571,6 +586,7 @@ class RingboundGame:
         self.pending_action = None
         self.status_message = f"Saruman swaps {chosen_card['name']} for {target_card['name']}."
         self.update_hand_visuals()
+        self.schedule_ai()
 
     def handle_hand_card_click(self, visual_card):
         if self.pending_action is not None and self.pending_action["type"] == "saruman_exchange":
@@ -604,6 +620,8 @@ class RingboundGame:
             self.status_message = f"{self.defender} must defend {visual_card.data['name']}."
             self.update_hand_visuals()
             self.check_game_over()
+            if self.state != STATE_GAMEOVER:
+                self.schedule_ai()
 
         elif self.play_phase == "DEFEND":
             self.table_defenses.append(visual_card)
@@ -615,6 +633,7 @@ class RingboundGame:
                 self.current_player = self.attacker
                 self.status_message = f"{self.attacker} may reinforce or end the attack."
                 self.update_hand_visuals()
+                self.schedule_ai()
             self.check_game_over()
 
     def concede_defense(self):
@@ -664,6 +683,7 @@ class RingboundGame:
             else:
                 self.status_message = f"{self.attacker} leads the next round."
             self.update_hand_visuals()
+            self.schedule_ai()
 
     def draw_back_to_six(self, player):
         hand = self.get_player_realm_hand(player)
@@ -681,12 +701,109 @@ class RingboundGame:
             return
 
         if len(self.realm_deck) == 0:
-            if self.player_has_no_cards("P1"):
+            p1_empty = self.player_has_no_cards("P1")
+            p2_empty = self.player_has_no_cards("P2")
+            if p1_empty:
                 self.winner = "P1"
                 self.state = STATE_GAMEOVER
-            elif self.player_has_no_cards("P2"):
+            elif p2_empty:
                 self.winner = "P2"
                 self.state = STATE_GAMEOVER
+            elif len(self.p1_hand) == 0 and len(self.p2_hand) == 0:
+                # Both players have only hero cards left — stalemate.
+                # Fewer wounds wins; tie goes to fewer total cards.
+                if self.wounds["P1"] < self.wounds["P2"]:
+                    self.winner = "P1"
+                elif self.wounds["P2"] < self.wounds["P1"]:
+                    self.winner = "P2"
+                elif len(self.p1_heroes) <= len(self.p2_heroes):
+                    self.winner = "P1"
+                else:
+                    self.winner = "P2"
+                self.state = STATE_GAMEOVER
+
+    def is_ai_turn(self):
+        """Return True when P2 (the AI) should act."""
+        if self.ai_opponent is None:
+            return False
+        if self.state == STATE_DRAFTING and self.current_drafter == "P2":
+            return True
+        if self.state == STATE_PLAYING and self.current_player == "P2":
+            return True
+        return False
+
+    def schedule_ai(self):
+        """Start the AI thinking timer if it isn't already running."""
+        if self.ai_timer == 0 and self.is_ai_turn():
+            self.ai_timer = pygame.time.get_ticks()
+
+    def try_ai_turn(self):
+        """Execute the AI's move once the delay has elapsed."""
+        if self.ai_timer == 0 or not self.is_ai_turn():
+            self.ai_timer = 0
+            return
+        if pygame.time.get_ticks() - self.ai_timer < AI_DELAY_MS:
+            return
+
+        self.ai_timer = 0
+
+        if self.state == STATE_DRAFTING:
+            visual, card_type = self.ai_opponent.choose_draft(
+                self, self.realm_draft_visuals, self.hero_draft_visuals,
+            )
+            self.attempt_draft(visual, card_type)
+            self.schedule_ai()
+            return
+
+        if self.state == STATE_PLAYING:
+            action = self.ai_opponent.choose_action(self, "P2")
+            self._execute_ai_action(action)
+            if self.state != STATE_GAMEOVER:
+                self.schedule_ai()
+
+    def _execute_ai_action(self, action):
+        """Translate an AI action dict into game method calls."""
+        atype = action["type"]
+
+        if atype == "realm":
+            card_data = action["card_data"]
+            visual = self._make_play_visual(card_data)
+            if visual is not None:
+                self.attempt_play_card(visual)
+
+        elif atype == "hero":
+            self.attempt_hero_play(action["card_data"])
+
+        elif atype == "concede":
+            self.concede_defense()
+
+        elif atype == "end_attack":
+            self.end_round(defender_took_wound=False, pickup_defenses=False)
+
+        elif atype == "suit":
+            self.resolve_suit_choice(action["suit"])
+
+        elif atype == "aragorn":
+            target_data = action["card_data"]
+            for atk in self.table_attacks:
+                if _card_data(atk) is target_data or _card_data(atk) == target_data:
+                    self.resolve_aragorn(atk)
+                    break
+
+        elif atype == "saruman":
+            self.resolve_saruman_exchange(action["card_data"])
+
+        elif atype == "pass":
+            # AI has nothing to do — end the round to avoid stalling
+            self.end_round(defender_took_wound=False, pickup_defenses=False)
+
+    def _make_play_visual(self, card_data):
+        """Create a CardUI for the AI's chosen card so it can enter the
+        table_attacks / table_defenses lists like a human click would."""
+        hand = self.get_player_realm_hand("P2")
+        if card_data not in hand:
+            return None
+        return CardUI(card_data, 0, 0)
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -698,35 +815,58 @@ class RingboundGame:
                 mouse_pos = pygame.mouse.get_pos()
 
                 if self.state == STATE_SPLASH:
+                    self.state = STATE_DIFFICULTY
+
+                elif self.state == STATE_DIFFICULTY:
+                    if self.easy_btn.is_clicked(mouse_pos):
+                        self.ai_opponent = EasyAI()
+                    elif self.medium_btn.is_clicked(mouse_pos):
+                        self.ai_opponent = MediumAI()
+                    elif self.hard_btn.is_clicked(mouse_pos):
+                        self.ai_opponent = HardAI()
+                    else:
+                        continue
                     self.setup_game()
                     self.state = STATE_DRAFTING
+                    self.schedule_ai()
 
                 elif self.state == STATE_GAMEOVER:
                     self.reset_game_state()
 
                 elif self.state == STATE_DRAFTING:
+                    if self.is_ai_turn():
+                        continue
                     for visual_card in self.realm_draft_visuals[:]:
                         if visual_card.is_clicked(mouse_pos):
                             self.attempt_draft(visual_card, "realm")
+                            self.schedule_ai()
                             break
                     for visual_card in self.hero_draft_visuals[:]:
                         if visual_card.is_clicked(mouse_pos):
                             self.attempt_draft(visual_card, "hero")
+                            self.schedule_ai()
                             break
 
                 elif self.state == STATE_PLAYING:
+                    if self.is_ai_turn():
+                        continue
+
                     if self.handle_pending_click(mouse_pos):
+                        self.schedule_ai()
                         continue
 
                     for visual_card in self.active_hand_visuals[:]:
                         if visual_card.is_clicked(mouse_pos):
                             self.handle_hand_card_click(visual_card)
+                            self.schedule_ai()
                             break
 
                     if self.play_phase == "DEFEND" and self.pending_action is None and self.wound_btn.is_clicked(mouse_pos):
                         self.concede_defense()
+                        self.schedule_ai()
                     elif self.play_phase == "REINFORCE" and self.pending_action is None and self.end_atk_btn.is_clicked(mouse_pos):
                         self.end_round(defender_took_wound=False, pickup_defenses=False)
+                        self.schedule_ai()
 
     def handle_pending_click(self, mouse_pos):
         if self.pending_action is None:
@@ -780,14 +920,37 @@ class RingboundGame:
     def draw_splash_screen(self):
         self.screen.fill(BLACK)
         title = self.font_title.render("RINGBOUND", True, WHITE)
-        prompt = self.font_regular.render("Click to Start Draft", True, WHITE)
+        prompt = self.font_regular.render("Click to Begin", True, WHITE)
         self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 250))
         self.screen.blit(prompt, (WINDOW_WIDTH // 2 - prompt.get_width() // 2, 500))
+
+    def draw_difficulty_screen(self):
+        self.screen.fill(BLACK)
+        title = self.font_title.render("RINGBOUND", True, WHITE)
+        subtitle = self.font_subtitle.render("Choose Difficulty", True, GOLD)
+        self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 120))
+        self.screen.blit(subtitle, (WINDOW_WIDTH // 2 - subtitle.get_width() // 2, 220))
+        self.easy_btn.draw(self.screen)
+        self.medium_btn.draw(self.screen)
+        self.hard_btn.draw(self.screen)
+
+        easy_desc = self.font_tiny.render("Random moves — good for learning the rules", True, LIGHT_GRAY)
+        medium_desc = self.font_tiny.render("Greedy heuristics — a solid challenge", True, LIGHT_GRAY)
+        hard_desc = self.font_tiny.render("Strategic play — fights to win", True, LIGHT_GRAY)
+        self.screen.blit(easy_desc, (WINDOW_WIDTH // 2 - easy_desc.get_width() // 2, 360))
+        self.screen.blit(medium_desc, (WINDOW_WIDTH // 2 - medium_desc.get_width() // 2, 440))
+        self.screen.blit(hard_desc, (WINDOW_WIDTH // 2 - hard_desc.get_width() // 2, 520))
 
     def draw_game_over_screen(self):
         self.screen.fill(BLACK)
         title = self.font_title.render("GAME OVER", True, RED)
-        winner_text = self.font_subtitle.render(f"{self.winner} claims the One Ring!", True, GOLD)
+
+        if self.winner == "P1":
+            winner_label = "You claim the One Ring!"
+        else:
+            ai_name = self.ai_opponent.name if self.ai_opponent else "P2"
+            winner_label = f"The {ai_name} AI claims the One Ring!"
+        winner_text = self.font_subtitle.render(winner_label, True, GOLD)
         prompt = self.font_regular.render("Click anywhere to return to main menu", True, LIGHT_GRAY)
 
         self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 200))
@@ -796,7 +959,11 @@ class RingboundGame:
 
     def draw_drafting_ui(self):
         self.screen.fill((50, 50, 100))
-        turn = self.font_title.render(f"Drafting: {self.current_drafter}", True, GOLD)
+        if self.current_drafter == "P2" and self.ai_opponent is not None:
+            turn_label = f"Drafting: {self.ai_opponent.name} AI"
+        else:
+            turn_label = f"Drafting: {self.current_drafter}"
+        turn = self.font_title.render(turn_label, True, GOLD)
         p1 = self.font_small.render(f"P1 Realm: {len(self.p1_hand)} | Heroes: {len(self.p1_heroes)}", True, WHITE)
         p2 = self.font_small.render(f"P2 Realm: {len(self.p2_hand)} | Heroes: {len(self.p2_heroes)}", True, WHITE)
         self.screen.blit(turn, (WINDOW_WIDTH // 2 - turn.get_width() // 2, 30))
@@ -889,7 +1056,8 @@ class RingboundGame:
         self.screen.blit(turn_text, (WINDOW_WIDTH // 2 - turn_text.get_width() // 2, 20))
 
         p1_wounds = self.font_regular.render(f"P1 Wounds: {self.wounds['P1']}/6", True, RED)
-        p2_wounds = self.font_regular.render(f"P2 Wounds: {self.wounds['P2']}/6", True, RED)
+        ai_label = f"AI ({self.ai_opponent.name})" if self.ai_opponent else "P2"
+        p2_wounds = self.font_regular.render(f"{ai_label} Wounds: {self.wounds['P2']}/6", True, RED)
         self.screen.blit(p1_wounds, (WINDOW_WIDTH - 220, 30))
         self.screen.blit(p2_wounds, (WINDOW_WIDTH - 220, 70))
 
@@ -938,8 +1106,15 @@ class RingboundGame:
 
         hand_label = self.font_regular.render(f"{self.current_player}'s Hand:", True, WHITE)
         self.screen.blit(hand_label, (WINDOW_WIDTH // 2 - hand_label.get_width() // 2, 510))
-        for visual_card in self.active_hand_visuals:
-            visual_card.draw(self.screen)
+
+        if self.current_player == "P2" and self.ai_opponent is not None:
+            ai_thinking = self.font_small.render(
+                f"{self.ai_opponent.name} AI is thinking...", True, GOLD,
+            )
+            self.screen.blit(ai_thinking, (WINDOW_WIDTH // 2 - ai_thinking.get_width() // 2, 620))
+        else:
+            for visual_card in self.active_hand_visuals:
+                visual_card.draw(self.screen)
 
         self.draw_revealed_hand_panel()
         self.draw_effects_panel()
@@ -947,8 +1122,11 @@ class RingboundGame:
     def run(self):
         while True:
             self.handle_events()
+            self.try_ai_turn()
             if self.state == STATE_SPLASH:
                 self.draw_splash_screen()
+            elif self.state == STATE_DIFFICULTY:
+                self.draw_difficulty_screen()
             elif self.state == STATE_DRAFTING:
                 self.draw_drafting_ui()
             elif self.state == STATE_PLAYING:
