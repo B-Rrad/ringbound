@@ -9,6 +9,9 @@ from settings import *
 from ui_elements import ButtonUI, CardUI
 
 class RingboundGame:
+    MAX_REALM_CARDS = 6
+    MAX_HERO_CARDS = 4
+
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -193,10 +196,29 @@ class RingboundGame:
             self.hero_draft_visuals.append(CardUI(self.hero_deck.pop(), start_x + (index * 120), 500))
 
         self.status_message = f"{self.current_drafter} drafts first."
+        self.update_draft_visuals()
+
+    def can_draft_card_type(self, player, card_type):
+        if card_type == "realm":
+            return len(self.get_player_realm_hand(player)) < self.MAX_REALM_CARDS
+        if card_type == "hero":
+            return len(self.get_player_hero_hand(player)) < self.MAX_HERO_CARDS
+        return False
+
+    def update_draft_visuals(self):
+        can_take_realm = self.can_draft_card_type(self.current_drafter, "realm")
+        can_take_hero = self.can_draft_card_type(self.current_drafter, "hero")
+        for visual_card in self.realm_draft_visuals:
+            visual_card.is_disabled = not can_take_realm
+        for visual_card in self.hero_draft_visuals:
+            visual_card.is_disabled = not can_take_hero
 
     def attempt_draft(self, visual_card, card_type):
         current_realm_hand = self.get_player_realm_hand(self.current_drafter)
         current_hero_hand = self.get_player_hero_hand(self.current_drafter)
+
+        if not self.can_draft_card_type(self.current_drafter, card_type):
+            return
 
         if card_type == "realm":
             current_realm_hand.append(visual_card.data)
@@ -212,6 +234,8 @@ class RingboundGame:
     def switch_drafter(self):
         self.current_drafter = "P2" if self.current_drafter == "P1" else "P1"
         self.status_message = f"{self.current_drafter} is drafting."
+        self.update_draft_visuals()
+        self.update_draft_visuals()
 
     def check_draft_complete(self):
         if len(self.realm_draft_visuals) == 0 and len(self.hero_draft_visuals) == 0:
@@ -799,9 +823,11 @@ class RingboundGame:
         turn = self.font_title.render(f"Drafting: {self.current_drafter}", True, GOLD)
         p1 = self.font_small.render(f"P1 Realm: {len(self.p1_hand)} | Heroes: {len(self.p1_heroes)}", True, WHITE)
         p2 = self.font_small.render(f"P2 Realm: {len(self.p2_hand)} | Heroes: {len(self.p2_heroes)}", True, WHITE)
+        rule_text = self.font_tiny.render("Draft limit: 6 Realm Cards and 4 Hero Cards per player.", True, WHITE)
         self.screen.blit(turn, (WINDOW_WIDTH // 2 - turn.get_width() // 2, 30))
         self.screen.blit(p1, (50, 50))
         self.screen.blit(p2, (WINDOW_WIDTH - 250, 50))
+        self.screen.blit(rule_text, (WINDOW_WIDTH // 2 - rule_text.get_width() // 2, 80))
 
         draft_trump_visual = CardUI(self.trump_card, 40, 92)
         draft_trump_visual.width = 90
