@@ -4,7 +4,7 @@ from typing import Any
 
 import pygame
 
-from .animator import Animator, Tween, ease_in_out, ease_out_quad
+from .animator import Animator, Tween, ease_out_quad
 from .card_cache import CardRenderer
 from .input_handler import HitTarget, InputHandler
 from .layout import LayoutManager
@@ -90,8 +90,10 @@ class Renderer:
 
         p1 = self.layout.fonts["small"].render(f"P1 Draft: {len(game.p1_hand)} realm, {len(game.p1_heroes)} hero", True, self.theme.text_primary)
         p2 = self.layout.fonts["small"].render(f"P2 Draft: {len(game.p2_hand)} realm, {len(game.p2_heroes)} hero", True, self.theme.text_primary)
+        draft_rule = self.layout.fonts["tiny"].render("Draft limit: 6 realm cards and 4 hero cards per player", True, self.theme.text_primary)
         screen.blit(p1, (int(self.layout.width * 0.02), int(self.layout.height * 0.02)))
         screen.blit(p2, (int(self.layout.width * 0.78), int(self.layout.height * 0.02)))
+        screen.blit(draft_rule, draft_rule.get_rect(center=(self.layout.rects["screen"].centerx, int(self.layout.height * 0.10))))
 
         trump_label = self.layout.fonts["small"].render("Trump Card", True, self.theme.accent_gold)
         trump_rect = pygame.Rect(
@@ -111,11 +113,36 @@ class Renderer:
         realm_rects = self.layout.place_row(realm_area, len(game.realm_draft_visuals), realm_area.centery)
         hero_rects = self.layout.place_row(hero_area, len(game.hero_draft_visuals), hero_area.centery)
 
-        for idx, visual in enumerate(game.realm_draft_visuals):
-            self._draw_card_instance(screen, visual, realm_rects[idx], input_handler, targets, now, f"draft_realm_{idx}", "pick_draft_card", {"card_type": "realm", "visual_card": visual})
+        realm_enabled = game.can_draft_card_type(game.current_drafter, "realm")
+        hero_enabled = game.can_draft_card_type(game.current_drafter, "hero")
 
-        for idx, visual in enumerate(game.hero_draft_visuals):
-            self._draw_card_instance(screen, visual, hero_rects[idx], input_handler, targets, now, f"draft_hero_{idx}", "pick_draft_card", {"card_type": "hero", "visual_card": visual})
+        for idx, card_data in enumerate(game.realm_draft_visuals):
+            self._draw_card_instance(
+                screen,
+                card_data,
+                realm_rects[idx],
+                input_handler,
+                targets,
+                now,
+                f"draft_realm_{idx}",
+                "pick_draft_card",
+                {"card_type": "realm", "card_index": idx},
+                enabled=realm_enabled,
+            )
+
+        for idx, card_data in enumerate(game.hero_draft_visuals):
+            self._draw_card_instance(
+                screen,
+                card_data,
+                hero_rects[idx],
+                input_handler,
+                targets,
+                now,
+                f"draft_hero_{idx}",
+                "pick_draft_card",
+                {"card_type": "hero", "card_index": idx},
+                enabled=hero_enabled,
+            )
 
     def _draw_playing(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
         top = self.layout.rects["top_bar"]
@@ -242,14 +269,14 @@ class Renderer:
         attack_rects = self.layout.place_row(attack_zone, len(game.table_attacks), int(attack_zone.y + attack_zone.h * 0.60))
         defense_rects = self.layout.place_row(defense_zone, len(game.table_defenses), int(defense_zone.y + defense_zone.h * 0.60))
 
-        for idx, visual in enumerate(game.table_attacks):
-            payload = {"attack_visual": visual}
+        for idx, card_data in enumerate(game.table_attacks):
+            payload = {"attack_index": idx}
             action = "select_aragorn_target"
             is_pickable = game.pending_action is not None and game.pending_action["type"] == "aragorn_return"
-            self._draw_card_instance(screen, visual, attack_rects[idx], input_handler, targets, now, f"atk_{idx}", action, payload, enabled=is_pickable)
+            self._draw_card_instance(screen, card_data, attack_rects[idx], input_handler, targets, now, f"atk_{idx}", action, payload, enabled=is_pickable)
 
-        for idx, visual in enumerate(game.table_defenses):
-            self._draw_card_instance(screen, visual, defense_rects[idx], input_handler, targets, now, f"def_{idx}", "noop", {}, enabled=False)
+        for idx, card_data in enumerate(game.table_defenses):
+            self._draw_card_instance(screen, card_data, defense_rects[idx], input_handler, targets, now, f"def_{idx}", "noop", {}, enabled=False)
 
     def _draw_hand(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
         hand_area = self.layout.rects["hand_area"]
@@ -270,19 +297,19 @@ class Renderer:
         start_x = hand_area.x + (hand_area.w - total_w) / 2
         y = hand_area.y + int(hand_area.h * 0.20)
 
-        for idx, visual in enumerate(hand_cards):
+        for idx, card_data in enumerate(hand_cards):
             rect = pygame.Rect(int(start_x + idx * spacing), y, card_w, card_h)
             self._draw_card_instance(
                 screen,
-                visual,
+                card_data,
                 rect,
                 input_handler,
                 targets,
                 now,
                 f"hand_{idx}",
                 "select_hand_card",
-                {"visual_card": visual},
-                enabled=not bool(getattr(visual, "is_disabled", False)),
+                {"card_index": idx},
+                enabled=bool(game.is_card_playable_in_hand(card_data)),
             )
 
     def _draw_action_buttons(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler) -> None:
@@ -330,7 +357,7 @@ class Renderer:
     def _draw_card_instance(
         self,
         screen: pygame.Surface,
-        visual_card: Any,
+        card_data: Any,
         logical_rect: pygame.Rect,
         input_handler: InputHandler,
         targets: list[HitTarget],
@@ -340,12 +367,7 @@ class Renderer:
         payload: dict[str, Any],
         enabled: bool = True,
     ) -> None:
-        card_id = self.card_renderer._id_for_card(visual_card.data)
-        visual_card.rect = logical_rect.copy()
-        if hasattr(visual_card, "x"):
-            visual_card.x = logical_rect.x
-        if hasattr(visual_card, "y"):
-            visual_card.y = logical_rect.y
+        card_id = self.card_renderer._id_for_card(card_data)
 
         targets.append(HitTarget(target_id, logical_rect.copy(), action, payload, enabled=enabled))
 
@@ -384,7 +406,7 @@ class Renderer:
         final_rect = anim_rect if anim_rect is not None else draw_rect
         final_alpha = anim_alpha if anim_alpha is not None else 255
 
-        card_surface = self.card_renderer.card_surface(visual_card.data, state, final_rect.size)
+        card_surface = self.card_renderer.card_surface(card_data, state, final_rect.size)
         if final_alpha != 255:
             card_surface = card_surface.copy()
             card_surface.set_alpha(final_alpha)
