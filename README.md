@@ -1,4 +1,6 @@
 # Ringbound
+
+this is a test
 `Ringbound` is a local two-player fantasy card game built with `pygame`. Players draft realm cards and hero cards, then battle through attack/defense rounds until one player reaches 6 wounds or empties their hand after the deck runs out.
 
 ## Submission Contents
