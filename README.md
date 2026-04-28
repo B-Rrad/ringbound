@@ -19,6 +19,12 @@ ringbound/
 |-- data/
 |   |-- hero_cards.json
 |   `-- realm_cards.json
+|-- ringbound_game/
+|   |-- base.py
+|   |-- events.py
+|   |-- game.py
+|   |-- gameplay.py
+|   `-- rendering.py
 |-- release/
 |   `-- Ringbound.exe
 |-- main.py
@@ -80,7 +86,11 @@ python main.py
 
 ## Project Notes
 
-- `main.py` contains the game loop, drafting flow, combat flow, and win-condition logic.
+- `main.py` is the launch entrypoint for the game.
+- `ringbound_game/base.py` owns setup, shared state, card loading, and the main loop shell.
+- `ringbound_game/gameplay.py` owns drafting, combat flow, hero powers, and win-condition logic.
+- `ringbound_game/events.py` owns mouse input and state-driven click handling.
+- `ringbound_game/rendering.py` owns screen drawing and panel/layout helpers.
 - `ui_elements.py` contains the card and button drawing helpers.
 - `settings.py` contains shared window, color, and state constants.
 - `balance_analysis.py` is a separate analysis utility and is not required to play the game.
