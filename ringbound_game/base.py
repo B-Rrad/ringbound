@@ -24,6 +24,8 @@ from ui_elements import ButtonUI, CardUI
 class RingboundGameBase:
     MAX_REALM_CARDS = 6
     MAX_HERO_CARDS = 4
+    DRAFT_REALM_DISPLAY_COUNT = 10
+    DRAFT_HERO_DISPLAY_COUNT = 8
 
     def __init__(self):
         pygame.init()
@@ -197,6 +199,12 @@ class RingboundGameBase:
         random.shuffle(self.realm_deck)
         random.shuffle(self.hero_deck)
 
+        if len(self.realm_deck) < 3:
+            self.winner = "Setup Error"
+            self.win_reason = "At least 3 realm cards are required to start a game."
+            self.state = STATE_GAMEOVER
+            return False
+
         p1_init = self.realm_deck.pop()
         p2_init = self.realm_deck.pop()
         self.p1_hand.append(p1_init)
@@ -216,15 +224,19 @@ class RingboundGameBase:
         self.trump_suit = self.trump_card["suit"]
 
         start_x = 40
-        for index in range(10):
+        realm_display_count = min(self.DRAFT_REALM_DISPLAY_COUNT, len(self.realm_deck))
+        for index in range(realm_display_count):
             self.realm_draft_visuals.append(CardUI(self.realm_deck.pop(), start_x + (index * 120), 280))
 
         start_x = 160
-        for index in range(8):
+        hero_display_count = min(self.DRAFT_HERO_DISPLAY_COUNT, len(self.hero_deck))
+        for index in range(hero_display_count):
             self.hero_draft_visuals.append(CardUI(self.hero_deck.pop(), start_x + (index * 120), 500))
 
         self.status_message = f"{self.current_drafter} drafts first."
         self.update_draft_visuals()
+        self.check_draft_complete()
+        return True
 
     def draw_back_to_six(self, player):
         hand = self.get_player_realm_hand(player)

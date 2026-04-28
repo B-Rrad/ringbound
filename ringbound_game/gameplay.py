@@ -5,6 +5,8 @@ from ui_elements import CardUI
 
 
 class GameplayMixin:
+    ATTACK_COMBO_HEROES = {"legolas", "balrog"}
+
     def can_draft_card_type(self, player, card_type):
         if card_type == "realm":
             return len(self.get_player_realm_hand(player)) < self.MAX_REALM_CARDS
@@ -111,14 +113,27 @@ class GameplayMixin:
         return attack_card["rank"] in valid_ranks
 
     def current_player_has_attack_action(self):
-        if self.current_player != self.attacker or self.play_phase not in ("ATTACK", "REINFORCE"):
+        if self.current_player != self.attacker or self.play_phase != "ATTACK":
             return False
         if any(self.can_attack_with_card(card) for card in self.get_player_realm_hand(self.current_player)):
             return True
+
         return any(
-            hero_card["id"] != "galadriel" and self.can_use_hero(hero_card)
+            hero_card["id"] in self.ATTACK_COMBO_HEROES and self.can_use_hero(hero_card)
             for hero_card in self.get_player_hero_hand(self.current_player)
         )
+
+    def can_end_attack(self):
+        if self.pending_action is not None:
+            return False
+        if self.play_phase == "REINFORCE":
+            return True
+        if self.play_phase != "ATTACK":
+            return False
+        return not self.current_player_has_attack_action()
+
+    def can_concede_defense(self):
+        return self.play_phase == "DEFEND" and self.pending_action is None
 
     def get_saruman_target_card(self):
         defender_hand = list(self.get_player_realm_hand(self.defender))
@@ -173,7 +188,12 @@ class GameplayMixin:
         return None
 
     def can_activate_galadriel(self, player):
-        return self.state == STATE_PLAYING and self.wounds[player] > 0 and self.find_player_hero(player, "galadriel") is not None
+        return (
+            self.state == STATE_PLAYING
+            and self.pending_action is None
+            and self.wounds[player] > 0
+            and self.find_player_hero(player, "galadriel") is not None
+        )
 
     def activate_galadriel(self, player):
         hero_card = self.find_player_hero(player, "galadriel")
@@ -192,6 +212,9 @@ class GameplayMixin:
 
     def update_hand_visuals(self):
         self.active_hand_visuals = []
+        if self.current_player is None:
+            return
+
         current_realm_hand = self.get_player_realm_hand(self.current_player)
         current_hero_hand = self.get_player_hero_hand(self.current_player)
 

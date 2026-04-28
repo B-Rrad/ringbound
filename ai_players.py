@@ -1,7 +1,9 @@
 """AI opponents for Ringbound.
 
-Three difficulty levels ported from the balance-analysis simulation and
-adapted to work with the live game's CardUI wrappers.
+Three difficulty levels adapted to the refactored mixin architecture.
+Each AI class implements:
+  - choose_draft(game, realm_visuals, hero_visuals) -> (visual, card_type)
+  - choose_action(game, player) -> action dict
 """
 
 from __future__ import annotations
@@ -30,24 +32,25 @@ def _card_data(card):
 
 
 def _realm_cards_in_hand(game, player):
-    """Return realm card dicts the player currently holds."""
     return list(game.get_player_realm_hand(player))
 
 
 def _hero_cards_in_hand(game, player):
-    """Return hero card dicts the player currently holds."""
     return list(game.get_player_hero_hand(player))
 
 
 def _usable_heroes(game, player, phase_set):
     """Return hero dicts the player can legally activate right now,
     filtered to *phase_set* (ATTACK_HEROES or DEFENSE_HEROES)."""
+    saved = game.current_player
+    game.current_player = player
     heroes = []
     for hero in _hero_cards_in_hand(game, player):
         if hero["id"] not in phase_set:
             continue
         if game.can_use_hero(hero):
             heroes.append(hero)
+    game.current_player = saved
     return heroes
 
 
@@ -78,8 +81,7 @@ def _known_opponent_cards(game, player):
 # ===================================================================
 
 class EasyAI:
-    """Picks mostly random legal moves.  Equivalent to RandomAI in the
-    balance analysis."""
+    """Picks mostly random legal moves."""
 
     name = "Easy"
 
@@ -98,9 +100,14 @@ class EasyAI:
         return self.hero_draft_scores.get(card_data["id"], 5.0)
 
     def choose_draft(self, game, realm_visuals, hero_visuals):
-        """Return a (visual_card, card_type) tuple."""
-        options = [(v, "realm") for v in realm_visuals] + \
-                  [(v, "hero") for v in hero_visuals]
+        """Return a (visual_card, card_type) tuple respecting draft limits."""
+        options = []
+        if game.can_draft_card_type(game.current_drafter, "realm"):
+            options += [(v, "realm") for v in realm_visuals]
+        if game.can_draft_card_type(game.current_drafter, "hero"):
+            options += [(v, "hero") for v in hero_visuals]
+        if not options:
+            return None
         return random.choice(options)
 
     # -- Combat ---------------------------------------------------------
@@ -109,37 +116,55 @@ class EasyAI:
         """Return an action dict the game loop can execute.
 
         Possible shapes:
-            {"type": "realm",    "card_data": <dict>}
-            {"type": "hero",     "card_data": <dict>}
+            {"type": "realm",       "card_data": <dict>}
+            {"type": "hero",        "card_data": <dict>}
             {"type": "concede"}
             {"type": "end_attack"}
-            {"type": "pass"}                          # nothing to do
-            {"type": "suit",     "suit": <str>}       # pending suit choice
-            {"type": "aragorn",  "card_data": <dict>}  # pick table attack
-            {"type": "saruman",  "card_data": <dict>}  # pick own realm card
+            {"type": "pass"}
+            {"type": "suit",        "suit": <str>}
+            {"type": "aragorn",     "card_data": <dict>}
+            {"type": "saruman",     "card_data": <dict>}
+            {"type": "hero_attack", "card_data": <dict>}   # for legolas/balrog
+            {"type": "galadriel"}
         """
         # Handle pending actions first
         if game.pending_action is not None:
             return self._resolve_pending(game, player)
 
+        # Check if Galadriel heal is worthwhile
+        gal = self._maybe_galadriel(game, player)
+        if gal is not None:
+            return gal
+
         if player == game.attacker and game.play_phase in ("ATTACK", "REINFORCE"):
             return self._choose_attack(game, player)
         if player == game.defender and game.play_phase == "DEFEND":
             return self._choose_defense(game, player)
-        return {"type": "pass"}
+        return {"type": "end_attack"}
+
+    # -- Galadriel (standalone heal) ------------------------------------
+
+    def _maybe_galadriel(self, game, player):
+        return None
 
     # -- Pending helpers ------------------------------------------------
 
     def _resolve_pending(self, game, player):
         action_type = game.pending_action["type"]
+        chooser = game.pending_action.get("chooser", game.pending_action.get("owner"))
+
         if action_type == "choose_suit":
-            return {"type": "suit", "suit": self._choose_suit(game, player, game.pending_action["hero"])}
+            return {"type": "suit", "suit": self._choose_suit(game, chooser, game.pending_action["hero"])}
         if action_type == "aragorn_return":
             target = self._choose_aragorn_target(game, player)
             return {"type": "aragorn", "card_data": _card_data(target)}
         if action_type == "saruman_exchange":
-            card = self._choose_saruman_card(game, player)
+            card = self._choose_saruman_card(game, game.pending_action["owner"])
             return {"type": "saruman", "card_data": card}
+        if action_type == "hero_attack_card":
+            card = self._choose_hero_attack_card(game, game.pending_action["owner"])
+            if card is not None:
+                return {"type": "hero_attack", "card_data": card}
         return {"type": "pass"}
 
     # -- Attack / Reinforce ---------------------------------------------
@@ -152,9 +177,6 @@ class EasyAI:
             return {"type": "hero", "card_data": random.choice(usable)}
         if legal_realm:
             return {"type": "realm", "card_data": random.choice(legal_realm)}
-        if game.play_phase == "REINFORCE" or game.table_attacks:
-            return {"type": "end_attack"}
-        # No cards at all — end the round so the game can progress
         return {"type": "end_attack"}
 
     # -- Defense --------------------------------------------------------
@@ -169,7 +191,7 @@ class EasyAI:
             return {"type": "realm", "card_data": random.choice(legal_realm)}
         return {"type": "concede"}
 
-    # -- Suit / Aragorn / Saruman helpers --------------------------------
+    # -- Suit / Aragorn / Saruman / hero_attack helpers -----------------
 
     def _choose_suit(self, game, player, hero_card):
         return random.choice(game.all_suits)
@@ -179,6 +201,15 @@ class EasyAI:
 
     def _choose_saruman_card(self, game, player):
         realm = _realm_cards_in_hand(game, player)
+        if not realm:
+            return None
+        return random.choice(realm)
+
+    def _choose_hero_attack_card(self, game, player):
+        """Pick a realm card for Legolas or Balrog's hero_attack_card pending."""
+        realm = _realm_cards_in_hand(game, player)
+        if not realm:
+            return None
         return random.choice(realm)
 
 
@@ -190,9 +221,21 @@ class MediumAI(EasyAI):
     name = "Medium"
 
     def choose_draft(self, game, realm_visuals, hero_visuals):
-        options = [(v, "realm") for v in realm_visuals] + \
-                  [(v, "hero") for v in hero_visuals]
+        options = []
+        if game.can_draft_card_type(game.current_drafter, "realm"):
+            options += [(v, "realm") for v in realm_visuals]
+        if game.can_draft_card_type(game.current_drafter, "hero"):
+            options += [(v, "hero") for v in hero_visuals]
+        if not options:
+            return None
         return max(options, key=lambda pair: self.draft_score(pair[0].data))
+
+    # -- Galadriel heal -------------------------------------------------
+
+    def _maybe_galadriel(self, game, player):
+        if game.wounds[player] >= 4 and game.can_activate_galadriel(player):
+            return {"type": "galadriel", "player": player}
+        return None
 
     # -- Attack ---------------------------------------------------------
 
@@ -204,8 +247,6 @@ class MediumAI(EasyAI):
         if opp_known:
             opp_trumps = sum(1 for c in opp_known if "suit" in c and game.is_trump_card(c))
 
-        if "galadriel" in hero_map and game.wounds[player] >= 3:
-            return hero_map["galadriel"]
         if "sauron" in hero_map and game.play_phase == "ATTACK" and not game.table_attacks:
             return hero_map["sauron"]
         if "saruman" in hero_map and game.play_phase == "ATTACK" and not game.table_attacks:
@@ -242,8 +283,6 @@ class MediumAI(EasyAI):
             if game.play_phase == "REINFORCE" and best["rank"] > 9 and not usable:
                 return {"type": "end_attack"}
             return {"type": "realm", "card_data": best}
-        if game.play_phase == "REINFORCE":
-            return {"type": "end_attack"}
         return {"type": "end_attack"}
 
     # -- Defense --------------------------------------------------------
@@ -255,8 +294,6 @@ class MediumAI(EasyAI):
             return None
         attack = _card_data(attack_visual)
 
-        if "galadriel" in hero_map and game.wounds[player] >= 3:
-            return hero_map["galadriel"]
         if "gandalf" in hero_map and (not legal_realm or attack["rank"] >= 12):
             return hero_map["gandalf"]
         if "boromir" in hero_map and (not legal_realm or game.is_trump_card(attack)):
@@ -288,12 +325,13 @@ class MediumAI(EasyAI):
             attack_visual = game.get_current_attack_card()
             if attack_visual is not None:
                 return _card_data(attack_visual)["suit"]
+        # For gollum (defender chooses), pick suit we have most of
         own_counts = Counter(c["suit"] for c in _realm_cards_in_hand(game, player))
         if own_counts:
             return own_counts.most_common(1)[0][0]
         return game.all_suits[0]
 
-    # -- Aragorn / Saruman ----------------------------------------------
+    # -- Aragorn / Saruman / hero_attack --------------------------------
 
     def _choose_aragorn_target(self, game, player):
         def score(atk):
@@ -305,6 +343,14 @@ class MediumAI(EasyAI):
 
     def _choose_saruman_card(self, game, player):
         realm = _realm_cards_in_hand(game, player)
+        if not realm:
+            return None
+        return min(realm, key=lambda c: (game.is_trump_card(c), c["rank"]))
+
+    def _choose_hero_attack_card(self, game, player):
+        realm = _realm_cards_in_hand(game, player)
+        if not realm:
+            return None
         return min(realm, key=lambda c: (game.is_trump_card(c), c["rank"]))
 
 
@@ -320,6 +366,13 @@ class HardAI(MediumAI):
         if "rank" in card_data:
             return base + (1.5 if card_data["rank"] >= 12 else 0)
         return base + 0.6
+
+    # -- Galadriel heal -------------------------------------------------
+
+    def _maybe_galadriel(self, game, player):
+        if game.wounds[player] >= 3 and game.can_activate_galadriel(player):
+            return {"type": "galadriel", "player": player}
+        return None
 
     # -- Attack ---------------------------------------------------------
 
@@ -359,8 +412,6 @@ class HardAI(MediumAI):
             return {"type": "realm", "card_data": best}
         if hero is not None:
             return {"type": "hero", "card_data": hero}
-        if game.play_phase == "REINFORCE":
-            return {"type": "end_attack"}
         return {"type": "end_attack"}
 
     # -- Suit -----------------------------------------------------------
@@ -390,3 +441,9 @@ class HardAI(MediumAI):
         if own_counts:
             return own_counts.most_common(1)[0][0]
         return game.all_suits[0]
+
+    def _choose_hero_attack_card(self, game, player):
+        realm = _realm_cards_in_hand(game, player)
+        if not realm:
+            return None
+        return self._best_attack_card(game, player, realm)
