@@ -27,7 +27,7 @@ class UIController:
         self.animator = Animator()
         self.card_renderer = CardRenderer(self.theme, self.layout_manager)
         self.input_handler = InputHandler()
-        self.renderer = Renderer(self.theme, self.layout_manager, self.card_renderer, self.animator)
+        self.renderer = Renderer(self.theme, self.layout_manager, self.card_renderer, self.animator, self.root_dir)
         self._last_targets = []
 
     def handle_event(self, event: pygame.event.Event) -> Intent | None:

@@ -12,11 +12,15 @@ from .theme import Theme
 
 
 class Renderer:
-    def __init__(self, theme: Theme, layout: LayoutManager, card_renderer: CardRenderer, animator: Animator):
+    BACKGROUND_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
+    def __init__(self, theme: Theme, layout: LayoutManager, card_renderer: CardRenderer, animator: Animator, root_dir: str):
         self.theme = theme
         self.layout = layout
         self.card_renderer = card_renderer
         self.animator = animator
+        self.root_dir = root_dir
+        self._background_image = self._load_background_image()
         self._last_positions: dict[str, pygame.Rect] = {}
         self._slot_card_ids: dict[str, str] = {}
         self._card_last_rects: dict[str, pygame.Rect] = {}
@@ -47,8 +51,32 @@ class Renderer:
         self._draw_custom_cursor(screen, input_handler)
         return targets
 
+    def _load_background_image(self) -> pygame.Surface | None:
+        import os
+
+        for extension in self.BACKGROUND_EXTENSIONS:
+            image_path = os.path.join(self.root_dir, f"background{extension}")
+            if not os.path.isfile(image_path):
+                continue
+
+            try:
+                return pygame.image.load(image_path).convert_alpha()
+            except pygame.error:
+                continue
+
+        return None
+
     def _draw_background(self, screen: pygame.Surface) -> None:
         rect = self.layout.rects["screen"]
+        if self._background_image is not None:
+            background = pygame.transform.smoothscale(self._background_image, rect.size)
+            screen.blit(background, (0, 0))
+
+            tint = pygame.Surface(rect.size, pygame.SRCALPHA)
+            tint.fill((*self.theme.bg, 58))
+            screen.blit(tint, (0, 0))
+            return
+
         top = self.theme.bg
         bottom = tuple(min(255, int(c * 1.2)) for c in self.theme.bg)
         for row in range(rect.height):
@@ -60,14 +88,51 @@ class Renderer:
             )
             pygame.draw.line(screen, color, (0, row), (rect.width, row))
 
+    def _bubble_rect(self, rect: pygame.Rect, pad_x: int, pad_y: int) -> pygame.Rect:
+        return pygame.Rect(rect.x - pad_x, rect.y - pad_y, rect.w + pad_x * 2, rect.h + pad_y * 2)
+
+    def _draw_bubble(self, screen: pygame.Surface, rect: pygame.Rect, *, fill: tuple[int, int, int, int] | None = None, outline: tuple[int, int, int, int] | None = None, radius: int | None = None, shadow_offset: tuple[int, int] = (0, 3)) -> None:
+        radius = radius if radius is not None else max(10, int(min(rect.w, rect.h) * 0.18))
+        bubble = pygame.Surface(rect.size, pygame.SRCALPHA)
+        fill_color = fill if fill is not None else (18, 14, 22, 200)
+        outline_color = outline if outline is not None else (*self.theme.accent_gold, 120)
+
+        shadow = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0, 0, 0, 100), shadow.get_rect().move(shadow_offset), border_radius=radius)
+        screen.blit(shadow, rect.topleft)
+        pygame.draw.rect(bubble, fill_color, bubble.get_rect(), border_radius=radius)
+        pygame.draw.rect(bubble, outline_color, bubble.get_rect(), width=max(1, int(min(rect.w, rect.h) * 0.045)), border_radius=radius)
+        screen.blit(bubble, rect.topleft)
+
+    def _draw_text_bubble(self, screen: pygame.Surface, rect: pygame.Rect, *, fill: tuple[int, int, int, int] | None = None, outline: tuple[int, int, int, int] | None = None, radius: int | None = None, shadow_offset: tuple[int, int] = (0, 3)) -> pygame.Rect:
+        bubble_rect = self._bubble_rect(rect, max(10, int(rect.h * 0.28)), max(8, int(rect.h * 0.20)))
+        self._draw_bubble(screen, bubble_rect, fill=fill, outline=outline, radius=radius, shadow_offset=shadow_offset)
+        return bubble_rect
+
+    def _draw_translucent_rect(self, screen: pygame.Surface, rect: pygame.Rect, fill: tuple[int, int, int, int], outline: tuple[int, int, int, int] | None = None, border_width: int = 0, radius: int | None = None) -> None:
+        radius = radius if radius is not None else max(1, int(min(rect.w, rect.h) * 0.08))
+        surface = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(surface, fill, surface.get_rect(), border_radius=radius)
+        if outline is not None and border_width > 0:
+            pygame.draw.rect(surface, outline, surface.get_rect(), width=border_width, border_radius=radius)
+        screen.blit(surface, rect.topleft)
+
+    def _render_text_box(self, screen: pygame.Surface, text_surface: pygame.Surface, center: tuple[int, int], *, fill: tuple[int, int, int, int] | None = None, outline: tuple[int, int, int, int] | None = None, radius: int | None = None, padding: tuple[int, int] | None = None, shadow_offset: tuple[int, int] = (0, 3)) -> pygame.Rect:
+        padding_x, padding_y = padding if padding is not None else (18, 12)
+        bubble_rect = text_surface.get_rect(center=center)
+        bubble_rect = bubble_rect.inflate(padding_x * 2, padding_y * 2)
+        self._draw_bubble(screen, bubble_rect, fill=fill, outline=outline, radius=radius, shadow_offset=shadow_offset)
+        screen.blit(text_surface, text_surface.get_rect(center=bubble_rect.center))
+        return bubble_rect
+
     def _draw_splash(self, screen: pygame.Surface, targets: list[HitTarget]) -> None:
         center = self.layout.rects["screen"].center
         title = self.layout.fonts["title"].render("RINGBOUND", True, self.theme.accent_gold)
         prompt = self.layout.fonts["heading"].render("Click to start draft", True, self.theme.text_primary)
 
-        screen.blit(title, title.get_rect(center=(center[0], int(center[1] * 0.78))))
+        self._render_text_box(screen, title, (center[0], int(center[1] * 0.78)), fill=(24, 18, 30, 204), outline=(*self.theme.accent_gold, 150), radius=24, padding=(26, 18))
         prompt_rect = prompt.get_rect(center=(center[0], int(center[1] * 1.15)))
-        screen.blit(prompt, prompt_rect)
+        self._render_text_box(screen, prompt, prompt_rect.center, fill=(18, 14, 22, 190), outline=(*self.theme.border_subtle, 170), radius=20, padding=(22, 14))
 
         targets.append(HitTarget("splash_start", self.layout.rects["screen"], "start_game", {}))
 
@@ -78,22 +143,22 @@ class Renderer:
         winner_text = self.layout.fonts["phase"].render(f"{winner} claims the One Ring", True, self.theme.accent_gold)
         prompt = self.layout.fonts["label"].render("Click to return to splash", True, self.theme.text_primary)
 
-        screen.blit(title, title.get_rect(center=(center[0], int(center[1] * 0.72))))
-        screen.blit(winner_text, winner_text.get_rect(center=(center[0], int(center[1] * 1.02))))
-        screen.blit(prompt, prompt.get_rect(center=(center[0], int(center[1] * 1.28))))
+        self._render_text_box(screen, title, (center[0], int(center[1] * 0.72)), fill=(30, 18, 18, 205), outline=(*self.theme.accent_ember, 150), radius=24, padding=(26, 18))
+        self._render_text_box(screen, winner_text, (center[0], int(center[1] * 1.02)), fill=(22, 18, 28, 205), outline=(*self.theme.accent_gold, 150), radius=22, padding=(24, 14))
+        self._render_text_box(screen, prompt, (center[0], int(center[1] * 1.28)), fill=(18, 14, 22, 190), outline=(*self.theme.border_subtle, 160), radius=18, padding=(20, 12))
 
         targets.append(HitTarget("gameover_restart", self.layout.rects["screen"], "restart_game", {}))
 
     def _draw_drafting(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
         heading = self.layout.fonts["phase"].render(f"Drafting: {game.current_drafter}", True, self.theme.accent_gold)
-        screen.blit(heading, heading.get_rect(center=(self.layout.rects["screen"].centerx, int(self.layout.height * 0.06))))
+        self._render_text_box(screen, heading, (self.layout.rects["screen"].centerx, int(self.layout.height * 0.06)), fill=(24, 18, 30, 196), outline=(*self.theme.accent_gold, 140), radius=22, padding=(24, 14))
 
         p1 = self.layout.fonts["small"].render(f"P1 Draft: {len(game.p1_hand)} realm, {len(game.p1_heroes)} hero", True, self.theme.text_primary)
         p2 = self.layout.fonts["small"].render(f"P2 Draft: {len(game.p2_hand)} realm, {len(game.p2_heroes)} hero", True, self.theme.text_primary)
         draft_rule = self.layout.fonts["tiny"].render("Draft limit: 6 realm cards and 4 hero cards per player", True, self.theme.text_primary)
-        screen.blit(p1, (int(self.layout.width * 0.02), int(self.layout.height * 0.02)))
-        screen.blit(p2, (int(self.layout.width * 0.78), int(self.layout.height * 0.02)))
-        screen.blit(draft_rule, draft_rule.get_rect(center=(self.layout.rects["screen"].centerx, int(self.layout.height * 0.10))))
+        self._render_text_box(screen, p1, (int(self.layout.width * 0.16), int(self.layout.height * 0.04)), fill=(18, 14, 22, 188), outline=(*self.theme.border_subtle, 150), radius=18, padding=(18, 10))
+        self._render_text_box(screen, p2, (int(self.layout.width * 0.84), int(self.layout.height * 0.04)), fill=(18, 14, 22, 188), outline=(*self.theme.border_subtle, 150), radius=18, padding=(18, 10))
+        self._render_text_box(screen, draft_rule, (self.layout.rects["screen"].centerx, int(self.layout.height * 0.10)), fill=(20, 16, 24, 188), outline=(*self.theme.accent_gold, 115), radius=16, padding=(20, 10))
 
         trump_label = self.layout.fonts["small"].render("Trump Card", True, self.theme.accent_gold)
         trump_rect = pygame.Rect(
@@ -102,13 +167,15 @@ class Renderer:
             int(self.layout.metrics["card_w"]),
             int(self.layout.metrics["card_h"]),
         )
-        screen.blit(trump_label, (trump_rect.x, int(self.layout.height * 0.07)))
+        self._render_text_box(screen, trump_label, (trump_rect.centerx, int(self.layout.height * 0.08)), fill=(24, 18, 30, 196), outline=(*self.theme.accent_gold, 140), radius=16, padding=(18, 10))
         if game.trump_card is not None:
             trump_surface = self.card_renderer.card_surface(game.trump_card, "normal", trump_rect.size)
             screen.blit(trump_surface, trump_rect)
 
-        realm_area = pygame.Rect(int(self.layout.width * 0.16), int(self.layout.height * 0.26), int(self.layout.width * 0.80), int(self.layout.height * 0.27))
-        hero_area = pygame.Rect(int(self.layout.width * 0.16), int(self.layout.height * 0.56), int(self.layout.width * 0.80), int(self.layout.height * 0.27))
+        draft_x = int(self.layout.width * 0.14)
+        draft_w = int(self.layout.width * 0.72)
+        realm_area = pygame.Rect(draft_x, int(self.layout.height * 0.26), draft_w, int(self.layout.height * 0.27))
+        hero_area = pygame.Rect(draft_x, int(self.layout.height * 0.56), draft_w, int(self.layout.height * 0.27))
 
         realm_rects = self.layout.place_row(realm_area, len(game.realm_draft_visuals), realm_area.centery)
         hero_rects = self.layout.place_row(hero_area, len(game.hero_draft_visuals), hero_area.centery)
@@ -146,8 +213,7 @@ class Renderer:
 
     def _draw_playing(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
         top = self.layout.rects["top_bar"]
-        pygame.draw.rect(screen, (18, 14, 22), top)
-        pygame.draw.line(screen, self.theme.border_subtle, (0, top.bottom - 1), (self.layout.width, top.bottom - 1), max(1, int(self.layout.height * 0.002)))
+        self._draw_translucent_rect(screen, top, (18, 14, 22, 172), (*self.theme.border_subtle, 180), max(1, int(top.h * 0.05)), radius=max(1, int(top.h * 0.14)))
 
         self._draw_player_header(screen, "P1", game.wounds.get("P1", 0), pygame.Rect(0, 0, int(self.layout.width * 0.32), top.height), now)
         self._draw_player_header(screen, "P2", game.wounds.get("P2", 0), pygame.Rect(int(self.layout.width * 0.68), 0, int(self.layout.width * 0.32), top.height), now)
@@ -206,8 +272,7 @@ class Renderer:
 
     def _draw_trump_panel(self, screen: pygame.Surface, game: Any) -> None:
         panel = self.layout.rects["trump_panel"]
-        pygame.draw.rect(screen, (22, 18, 28), panel)
-        pygame.draw.line(screen, self.theme.border_subtle, (panel.right - 1, panel.y), (panel.right - 1, panel.bottom), max(1, int(self.layout.width * 0.001)))
+        self._draw_translucent_rect(screen, panel, (22, 18, 28, 168), (*self.theme.border_subtle, 150), max(1, int(panel.w * 0.03)), radius=max(1, int(panel.w * 0.06)))
 
         label = self.layout.fonts["small"].render("RING SUIT (TRUMP)", True, self.theme.accent_gold)
         screen.blit(label, (panel.x + int(panel.w * 0.08), panel.y + int(panel.h * 0.03)))
@@ -225,8 +290,7 @@ class Renderer:
 
     def _draw_effects_panel(self, screen: pygame.Surface, game: Any) -> None:
         panel = self.layout.rects["effects_panel"]
-        pygame.draw.rect(screen, (22, 18, 28), panel)
-        pygame.draw.line(screen, self.theme.border_subtle, (panel.x, panel.y), (panel.x, panel.bottom), max(1, int(self.layout.width * 0.001)))
+        self._draw_translucent_rect(screen, panel, (22, 18, 28, 168), (*self.theme.border_subtle, 150), max(1, int(panel.w * 0.03)), radius=max(1, int(panel.w * 0.06)))
 
         title = self.layout.fonts["small"].render("Round Effects", True, self.theme.accent_gold)
         screen.blit(title, (panel.x + int(panel.w * 0.08), panel.y + int(panel.h * 0.03)))
@@ -261,10 +325,9 @@ class Renderer:
         defense_zone = self.layout.rects["defense_zone"]
 
         for zone, label in ((attack_zone, "ATTACK ZONE"), (defense_zone, "DEFENSE ZONE")):
-            pygame.draw.rect(screen, (26, 22, 31), zone, border_radius=max(1, int(zone.h * 0.06)))
-            pygame.draw.rect(screen, self.theme.border_subtle, zone, width=max(1, int(zone.h * 0.02)), border_radius=max(1, int(zone.h * 0.06)))
+            self._draw_translucent_rect(screen, zone, (26, 22, 31, 150), (*self.theme.border_subtle, 135), max(1, int(zone.h * 0.02)), radius=max(1, int(zone.h * 0.06)))
             text = self.layout.fonts["small"].render(label, True, self.theme.text_muted)
-            screen.blit(text, (zone.centerx - text.get_width() // 2, zone.y + int(zone.h * 0.06)))
+            self._render_text_box(screen, text, (zone.centerx, zone.y + int(zone.h * 0.11)), fill=(18, 14, 22, 172), outline=(*self.theme.border_subtle, 120), radius=14, padding=(16, 8))
 
         attack_rects = self.layout.place_row(attack_zone, len(game.table_attacks), int(attack_zone.y + attack_zone.h * 0.60))
         defense_rects = self.layout.place_row(defense_zone, len(game.table_defenses), int(defense_zone.y + defense_zone.h * 0.60))
@@ -280,11 +343,10 @@ class Renderer:
 
     def _draw_hand(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
         hand_area = self.layout.rects["hand_area"]
-        pygame.draw.rect(screen, (18, 14, 22), hand_area)
-        pygame.draw.line(screen, self.theme.border_subtle, (0, hand_area.y), (self.layout.width, hand_area.y), max(1, int(self.layout.height * 0.002)))
+        self._draw_translucent_rect(screen, hand_area, (18, 14, 22, 172), (*self.theme.border_subtle, 150), max(1, int(hand_area.h * 0.05)), radius=max(1, int(hand_area.h * 0.08)))
 
         caption = self.layout.fonts["label"].render(f"{game.current_player} Hand", True, self.theme.text_primary)
-        screen.blit(caption, (hand_area.centerx - caption.get_width() // 2, hand_area.y + int(hand_area.h * 0.05)))
+        self._render_text_box(screen, caption, (hand_area.centerx, hand_area.y + int(hand_area.h * 0.12)), fill=(22, 18, 28, 196), outline=(*self.theme.accent_gold, 120), radius=16, padding=(18, 10))
 
         card_w, card_h = self.layout.card_size()
         hand_cards = game.active_hand_visuals
@@ -316,7 +378,7 @@ class Renderer:
         if game.pending_action is not None and game.pending_action["type"] == "choose_suit":
             area = self.layout.rects["effects_panel"]
             prompt = self.layout.fonts["tiny"].render("Choose a suit", True, self.theme.text_primary)
-            screen.blit(prompt, (area.x + int(area.w * 0.08), area.y + int(area.h * 0.62)))
+            self._render_text_box(screen, prompt, (area.centerx, area.y + int(area.h * 0.66)), fill=(18, 14, 22, 196), outline=(*self.theme.accent_gold, 120), radius=14, padding=(16, 8))
 
             for idx, suit in enumerate(game.all_suits):
                 button = pygame.Rect(
@@ -349,8 +411,9 @@ class Renderer:
     def _draw_button(self, screen: pygame.Surface, rect: pygame.Rect, text: str, color: tuple[int, int, int], pressed: bool) -> None:
         if pressed:
             color = tuple(max(0, int(c * (1.0 - self.theme.press_darkening))) for c in color)
-        pygame.draw.rect(screen, color, rect, border_radius=max(1, int(rect.h * 0.24)))
-        pygame.draw.rect(screen, self.theme.text_primary, rect, width=max(1, int(rect.h * 0.08)), border_radius=max(1, int(rect.h * 0.24)))
+        translucent = (*color, 175)
+        border = (*self.theme.text_primary, 150)
+        self._draw_translucent_rect(screen, rect, translucent, border, max(1, int(rect.h * 0.08)), radius=max(1, int(rect.h * 0.24)))
         label = self.layout.fonts["small"].render(text, True, self.theme.text_primary)
         screen.blit(label, label.get_rect(center=rect.center))
 
@@ -428,7 +491,7 @@ class Renderer:
         pygame.draw.rect(screen, self.theme.accent_gold, box, width=max(1, int(box.h * 0.03)), border_radius=max(1, int(box.h * 0.08)))
 
         prompt = self.layout.fonts["label"].render("Return to splash?", True, self.theme.text_primary)
-        screen.blit(prompt, prompt.get_rect(center=(box.centerx, int(box.y + box.h * 0.34))))
+        self._render_text_box(screen, prompt, (box.centerx, int(box.y + box.h * 0.34)), fill=(24, 18, 30, 205), outline=(*self.theme.accent_gold, 140), radius=18, padding=(18, 10))
 
         yes = pygame.Rect(int(box.x + box.w * 0.15), int(box.y + box.h * 0.60), int(box.w * 0.30), int(box.h * 0.24))
         no = pygame.Rect(int(box.x + box.w * 0.55), int(box.y + box.h * 0.60), int(box.w * 0.30), int(box.h * 0.24))

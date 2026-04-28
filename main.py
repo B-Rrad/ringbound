@@ -2,6 +2,7 @@ import json
 import os
 import random
 import sys
+from pathlib import Path
 
 import pygame
 
@@ -11,6 +12,8 @@ from ui import UIController
 class RingboundGame:
     MAX_REALM_CARDS = 6
     MAX_HERO_CARDS = 4
+    MUSIC_END_EVENT = pygame.USEREVENT + 1
+    MUSIC_EXTENSIONS = (".mp3",)
 
     def __init__(self):
         pygame.init()
@@ -18,12 +21,64 @@ class RingboundGame:
         pygame.display.set_caption("Ringbound: Battle for the One Ring")
         self.clock = pygame.time.Clock()
 
+        self.resource_root = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+        self.music_tracks = self._discover_music_tracks()
+        self.music_enabled = False
+        self.music_index = 0
+
         self.db = {"realm_cards": [], "hero_cards": []}
         self.all_suits = []
         self.load_database()
 
-        self.ui = UIController((WINDOW_WIDTH, WINDOW_HEIGHT), os.path.dirname(os.path.abspath(__file__)))
+        self.ui = UIController((WINDOW_WIDTH, WINDOW_HEIGHT), self.resource_root)
+        self._start_music()
         self.reset_game_state()
+
+    def _discover_music_tracks(self):
+        music_dir = Path(self.resource_root) / "music"
+        if not music_dir.is_dir():
+            return []
+
+        return [str(path) for path in sorted(music_dir.iterdir()) if path.is_file() and path.suffix.lower() in self.MUSIC_EXTENSIONS]
+
+    def _start_music(self):
+        if not self.music_tracks:
+            return
+
+        try:
+            pygame.mixer.init()
+            pygame.mixer.music.set_endevent(self.MUSIC_END_EVENT)
+        except pygame.error:
+            self.music_enabled = False
+            return
+
+        self.music_enabled = True
+        self.music_index = 0
+        self._play_music_track(self.music_index)
+
+    def _play_music_track(self, track_index):
+        if not self.music_enabled or not self.music_tracks:
+            return
+
+        track_count = len(self.music_tracks)
+        for offset in range(track_count):
+            candidate_index = (track_index + offset) % track_count
+            track_path = self.music_tracks[candidate_index]
+            try:
+                pygame.mixer.music.load(track_path)
+                pygame.mixer.music.play()
+                self.music_index = candidate_index
+                return
+            except pygame.error:
+                continue
+
+        self.music_enabled = False
+
+    def _advance_music(self):
+        if not self.music_enabled or not self.music_tracks:
+            return
+
+        self._play_music_track(self.music_index + 1)
 
     def load_database(self):
         base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -666,6 +721,10 @@ class RingboundGame:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+
+            if event.type == self.MUSIC_END_EVENT:
+                self._advance_music()
+                continue
 
             if event.type == pygame.VIDEORESIZE:
                 resized_w = max(1024, event.w)
