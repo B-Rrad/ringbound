@@ -9,8 +9,10 @@ from settings import (
     BLUE,
     FPS,
     RED,
+    STATE_DIFFICULTY,
     STATE_DRAFTING,
     STATE_GAMEOVER,
+    STATE_MODE_SELECT,
     STATE_PLAYING,
     STATE_SPLASH,
     WINDOW_HEIGHT,
@@ -45,10 +47,13 @@ class RingboundGameBase:
         self.end_atk_btn = ButtonUI(1020, 260, 160, 50, "End Attack", BLUE)
         self.p1_heal_btn = ButtonUI(1010, 520, 170, 42, "P1 Heal", BLUE)
         self.p2_heal_btn = ButtonUI(1010, 570, 170, 42, "P2 Heal", BLUE)
+        self.two_player_btn = ButtonUI(WINDOW_WIDTH // 2 - 140, 340, 280, 60, "Two Players", (60, 120, 180))
+        self.vs_ai_btn = ButtonUI(WINDOW_WIDTH // 2 - 140, 430, 280, 60, "vs AI", (160, 80, 50))
         self.suit_buttons = {}
         self.build_suit_buttons()
 
         self.reset_game_state()
+        self.ai_init()
 
     def load_database(self):
         if hasattr(sys, "_MEIPASS"):
@@ -129,6 +134,7 @@ class RingboundGameBase:
         self.pending_action = None
         self.revealed_hand = None
         self.status_message = "Click to start the draft."
+        self.ai_reset()
 
     def get_player_realm_hand(self, player):
         return self.p1_hand if player == "P1" else self.p2_hand
@@ -240,8 +246,13 @@ class RingboundGameBase:
     def run(self):
         while True:
             self.handle_events()
+            self.try_ai_turn()
             if self.state == STATE_SPLASH:
                 self.draw_splash_screen()
+            elif self.state == STATE_MODE_SELECT:
+                self.draw_mode_select_screen()
+            elif self.state == STATE_DIFFICULTY:
+                self.draw_difficulty_screen()
             elif self.state == STATE_DRAFTING:
                 self.draw_drafting_ui()
             elif self.state == STATE_PLAYING:

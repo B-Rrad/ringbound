@@ -36,14 +36,55 @@ class RenderingMixin:
     def draw_splash_screen(self):
         self.screen.fill(BLACK)
         title = self.font_title.render("RINGBOUND", True, WHITE)
-        prompt = self.font_regular.render("Click to Start Draft", True, WHITE)
-        self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 250))
+        subtitle = self.font_subtitle.render("Battle for the One Ring", True, GOLD)
+        prompt = self.font_regular.render("Click to Begin", True, LIGHT_GRAY)
+        self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 230))
+        self.screen.blit(subtitle, (WINDOW_WIDTH // 2 - subtitle.get_width() // 2, 310))
         self.screen.blit(prompt, (WINDOW_WIDTH // 2 - prompt.get_width() // 2, 500))
+
+    def draw_mode_select_screen(self):
+        self.screen.fill(BLACK)
+        title = self.font_title.render("RINGBOUND", True, WHITE)
+        subtitle = self.font_subtitle.render("Choose Game Mode", True, GOLD)
+        self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 120))
+        self.screen.blit(subtitle, (WINDOW_WIDTH // 2 - subtitle.get_width() // 2, 220))
+        self.two_player_btn.draw(self.screen)
+        self.vs_ai_btn.draw(self.screen)
+
+        tp_desc = self.font_tiny.render("Local two-player on the same screen", True, LIGHT_GRAY)
+        ai_desc = self.font_tiny.render("Play against an AI opponent", True, LIGHT_GRAY)
+        self.screen.blit(tp_desc, (WINDOW_WIDTH // 2 - tp_desc.get_width() // 2, 406))
+        self.screen.blit(ai_desc, (WINDOW_WIDTH // 2 - ai_desc.get_width() // 2, 496))
+
+    def draw_difficulty_screen(self):
+        self.screen.fill(BLACK)
+        title = self.font_title.render("RINGBOUND", True, WHITE)
+        subtitle = self.font_subtitle.render("Choose Difficulty", True, GOLD)
+        self.screen.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 120))
+        self.screen.blit(subtitle, (WINDOW_WIDTH // 2 - subtitle.get_width() // 2, 220))
+        self.easy_btn.draw(self.screen)
+        self.medium_btn.draw(self.screen)
+        self.hard_btn.draw(self.screen)
+
+        easy_desc = self.font_tiny.render("Random moves - good for learning the rules", True, LIGHT_GRAY)
+        medium_desc = self.font_tiny.render("Greedy heuristics - a solid challenge", True, LIGHT_GRAY)
+        hard_desc = self.font_tiny.render("Strategic play - fights to win", True, LIGHT_GRAY)
+        self.screen.blit(easy_desc, (WINDOW_WIDTH // 2 - easy_desc.get_width() // 2, 360))
+        self.screen.blit(medium_desc, (WINDOW_WIDTH // 2 - medium_desc.get_width() // 2, 440))
+        self.screen.blit(hard_desc, (WINDOW_WIDTH // 2 - hard_desc.get_width() // 2, 520))
 
     def draw_game_over_screen(self):
         self.screen.fill(BLACK)
         title = self.font_title.render("GAME OVER", True, RED)
-        winner_text = self.font_subtitle.render(f"{self.winner} claims the One Ring!", True, GOLD)
+
+        if self.ai_opponent is not None:
+            if self.winner == "P1":
+                winner_label = "You claim the One Ring!"
+            else:
+                winner_label = f"The {self.ai_opponent.name} AI claims the One Ring!"
+        else:
+            winner_label = f"{self.winner} claims the One Ring!"
+        winner_text = self.font_subtitle.render(winner_label, True, GOLD)
         prompt = self.font_regular.render("Click anywhere to return to main menu", True, LIGHT_GRAY)
         reason_rect = pygame.Rect(WINDOW_WIDTH // 2 - 290, 360, 580, 70)
 
@@ -56,7 +97,11 @@ class RenderingMixin:
 
     def draw_drafting_ui(self):
         self.screen.fill((50, 50, 100))
-        turn = self.font_title.render(f"Drafting: {self.current_drafter}", True, GOLD)
+        if self.current_drafter == "P2" and self.ai_opponent is not None:
+            turn_label = f"Drafting: {self.ai_opponent.name} AI"
+        else:
+            turn_label = f"Drafting: {self.current_drafter}"
+        turn = self.font_title.render(turn_label, True, GOLD)
         p1_text = self.font_small.render(f"P1 Realm: {len(self.p1_hand)} | Heroes: {len(self.p1_heroes)}", True, WHITE)
         p2_text = self.font_small.render(f"P2 Realm: {len(self.p2_hand)} | Heroes: {len(self.p2_heroes)}", True, WHITE)
         rule_text = self.font_tiny.render("Draft limit: 6 Realm Cards and 4 Hero Cards per player.", True, WHITE)
@@ -156,7 +201,11 @@ class RenderingMixin:
         self.screen.blit(turn_text, (WINDOW_WIDTH // 2 - turn_text.get_width() // 2, 20))
 
         p1_wounds = self.font_regular.render(f"P1 Wounds: {self.wounds['P1']}/6", True, RED)
-        p2_wounds = self.font_regular.render(f"P2 Wounds: {self.wounds['P2']}/6", True, RED)
+        if self.ai_opponent is not None:
+            p2_label = f"AI ({self.ai_opponent.name})"
+        else:
+            p2_label = "P2"
+        p2_wounds = self.font_regular.render(f"{p2_label} Wounds: {self.wounds['P2']}/6", True, RED)
         self.screen.blit(p1_wounds, (WINDOW_WIDTH - 220, 30))
         self.screen.blit(p2_wounds, (WINDOW_WIDTH - 220, 70))
 
@@ -209,13 +258,20 @@ class RenderingMixin:
 
         if self.can_activate_galadriel("P1"):
             self.p1_heal_btn.draw(self.screen)
-        if self.can_activate_galadriel("P2"):
+        if self.ai_opponent is None and self.can_activate_galadriel("P2"):
             self.p2_heal_btn.draw(self.screen)
 
         hand_label = self.font_regular.render(f"{self.current_player}'s Hand:", True, WHITE)
         self.screen.blit(hand_label, (WINDOW_WIDTH // 2 - hand_label.get_width() // 2, 510))
-        for visual_card in self.active_hand_visuals:
-            visual_card.draw(self.screen)
+
+        if self.current_player == "P2" and self.ai_opponent is not None:
+            ai_thinking = self.font_small.render(
+                f"{self.ai_opponent.name} AI is thinking...", True, GOLD,
+            )
+            self.screen.blit(ai_thinking, (WINDOW_WIDTH // 2 - ai_thinking.get_width() // 2, 620))
+        else:
+            for visual_card in self.active_hand_visuals:
+                visual_card.draw(self.screen)
 
         self.draw_revealed_hand_panel()
         self.draw_effects_panel()

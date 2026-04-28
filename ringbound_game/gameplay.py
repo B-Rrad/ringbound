@@ -76,6 +76,7 @@ class GameplayMixin:
             self.update_hand_visuals()
             self.state = STATE_PLAYING
             self.status_message = f"{self.attacker} opens the first attack."
+            self.schedule_ai()
 
     def can_defend_with_card(self, defense_card, attack_card):
         if attack_card is None:
@@ -207,6 +208,7 @@ class GameplayMixin:
         self.check_game_over()
         if self.state != STATE_GAMEOVER:
             self.update_hand_visuals()
+            self.schedule_ai()
 
     def update_hand_visuals(self):
         self.active_hand_visuals = []
@@ -403,6 +405,7 @@ class GameplayMixin:
         self.check_game_over()
         if self.state != STATE_GAMEOVER:
             self.update_hand_visuals()
+            self.schedule_ai()
 
     def resolve_gandalf(self):
         attack_card = self.get_current_attack_card()
@@ -420,6 +423,7 @@ class GameplayMixin:
 
         self.sync_turn_after_table_change()
         self.status_message = "Gandalf cancels the latest non-trump attack. The attacker must continue with a played rank or end the attack."
+        self.schedule_ai()
 
     def resolve_boromir(self):
         if self.get_current_attack_card() is None:
@@ -445,6 +449,7 @@ class GameplayMixin:
 
         self.play_phase = "REINFORCE"
         self.current_player = self.attacker
+        self.schedule_ai()
 
     def resolve_suit_choice(self, suit):
         hero_card = self.pending_action["hero"]
@@ -463,6 +468,7 @@ class GameplayMixin:
         self.pending_action = None
         self.current_player = owner
         self.update_hand_visuals()
+        self.schedule_ai()
 
     def resolve_aragorn(self, attack_visual):
         owner = self.pending_action["owner"]
@@ -489,6 +495,7 @@ class GameplayMixin:
         self.sync_turn_after_table_change()
         self.status_message = "Aragorn returns an attack card to your hand."
         self.update_hand_visuals()
+        self.schedule_ai()
 
     def resolve_saruman_exchange(self, chosen_card):
         hero_card = self.pending_action["hero"]
@@ -509,6 +516,7 @@ class GameplayMixin:
         self.pending_action = None
         self.status_message = f"Saruman swaps {chosen_card['name']} for {target_card['name']}."
         self.update_hand_visuals()
+        self.schedule_ai()
 
     def resolve_hero_attack_card(self, chosen_card):
         hero_card = self.pending_action["hero"]
@@ -534,6 +542,7 @@ class GameplayMixin:
             else:
                 self.status_message = f"Balrog charges with {chosen_card['name']}."
             self.update_hand_visuals()
+            self.schedule_ai()
 
     def handle_hand_card_click(self, visual_card):
         if self.pending_action is not None and self.pending_action["type"] == "saruman_exchange":
@@ -571,6 +580,8 @@ class GameplayMixin:
             self.status_message = f"{self.defender} must defend {visual_card.data['name']}."
             self.update_hand_visuals()
             self.check_game_over()
+            if self.state != STATE_GAMEOVER:
+                self.schedule_ai()
 
         elif self.play_phase == "DEFEND":
             self.table_defenses.append(visual_card)
@@ -582,6 +593,7 @@ class GameplayMixin:
                 self.current_player = self.attacker
                 self.status_message = f"{self.attacker} may reinforce or end the attack."
                 self.update_hand_visuals()
+                self.schedule_ai()
             self.check_game_over()
 
     def concede_defense(self):
@@ -631,6 +643,7 @@ class GameplayMixin:
             else:
                 self.status_message = f"{self.attacker} leads the next round."
             self.update_hand_visuals()
+            self.schedule_ai()
 
     def check_game_over(self):
         if self.wounds["P1"] >= 6:
