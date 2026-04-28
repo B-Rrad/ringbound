@@ -6,6 +6,19 @@ from settings import STATE_DRAFTING, STATE_GAMEOVER, STATE_PLAYING, STATE_SPLASH
 
 
 class EventMixin:
+    def handle_draft_clicks(self, mouse_pos):
+        for visual_card in self.realm_draft_visuals[:]:
+            if visual_card.is_clicked(mouse_pos):
+                self.attempt_draft(visual_card, "realm")
+                return True
+
+        for visual_card in self.hero_draft_visuals[:]:
+            if visual_card.is_clicked(mouse_pos):
+                self.attempt_draft(visual_card, "hero")
+                return True
+
+        return False
+
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -16,21 +29,15 @@ class EventMixin:
                 mouse_pos = pygame.mouse.get_pos()
 
                 if self.state == STATE_SPLASH:
-                    self.setup_game()
-                    self.state = STATE_DRAFTING
+                    if self.setup_game():
+                        self.state = STATE_DRAFTING
 
                 elif self.state == STATE_GAMEOVER:
                     self.reset_game_state()
 
                 elif self.state == STATE_DRAFTING:
-                    for visual_card in self.realm_draft_visuals[:]:
-                        if visual_card.is_clicked(mouse_pos):
-                            self.attempt_draft(visual_card, "realm")
-                            break
-                    for visual_card in self.hero_draft_visuals[:]:
-                        if visual_card.is_clicked(mouse_pos):
-                            self.attempt_draft(visual_card, "hero")
-                            break
+                    if self.handle_draft_clicks(mouse_pos):
+                        continue
 
                 elif self.state == STATE_PLAYING:
                     if self.can_activate_galadriel("P1") and self.p1_heal_btn.is_clicked(mouse_pos):
@@ -47,9 +54,9 @@ class EventMixin:
                             self.handle_hand_card_click(visual_card)
                             break
 
-                    if self.play_phase == "DEFEND" and self.pending_action is None and self.wound_btn.is_clicked(mouse_pos):
+                    if self.can_concede_defense() and self.wound_btn.is_clicked(mouse_pos):
                         self.concede_defense()
-                    elif self.play_phase in ("ATTACK", "REINFORCE") and self.pending_action is None and self.end_atk_btn.is_clicked(mouse_pos):
+                    elif self.can_end_attack() and self.end_atk_btn.is_clicked(mouse_pos):
                         self.end_round(defender_took_wound=False, pickup_defenses=False)
 
     def handle_pending_click(self, mouse_pos):
