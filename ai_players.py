@@ -325,7 +325,7 @@ class MediumAI(EasyAI):
             attack_visual = game.get_current_attack_card()
             if attack_visual is not None:
                 return _card_data(attack_visual)["suit"]
-        # For gollum (defender chooses), pick suit we have most of
+        # For gollum, prefer the suit this chooser can best exploit
         own_counts = Counter(c["suit"] for c in _realm_cards_in_hand(game, player))
         if own_counts:
             return own_counts.most_common(1)[0][0]

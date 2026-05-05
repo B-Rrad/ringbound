@@ -347,10 +347,8 @@ class GameplayMixin:
             self.set_pending_action(
                 "choose_suit",
                 hero_card,
-                "Gollum: defender chooses the suit that becomes trump for this round.",
+                "Gollum: choose the suit that becomes trump for this round.",
                 mode="gollum_trump",
-                chooser=self.defender,
-                current_player_override=self.defender,
             )
             return
         if hero_id == "wormtongue":

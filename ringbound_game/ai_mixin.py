@@ -50,7 +50,7 @@ class AIMixin:
             return True
         if self.state == STATE_PLAYING and self.current_player == "P2":
             return True
-        # Gollum: defender (could be P2) chooses suit
+        # Pending suit choice can also belong to the AI even before normal turn flow resumes
         if (self.state == STATE_PLAYING
                 and self.pending_action is not None
                 and self.pending_action.get("chooser") == "P2"):

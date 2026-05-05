@@ -82,7 +82,7 @@ python main.py
 - `Saruman` and `Sauron` are start-of-round attack tools.
 - `Gandalf` and `Boromir` are defensive responses.
 - `Legolas` and `Balrog` must be played together with a realm attack card.
-- `Gollum` lets the defender choose the temporary trump suit for the round.
+- `Gollum` lets the player who played it choose the temporary trump suit for the round.
 
 ## Project Notes
 
