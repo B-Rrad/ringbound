@@ -171,6 +171,8 @@ class Renderer:
         targets.append(HitTarget("gameover_restart", self.layout.rects["screen"], "restart_game", {}))
 
     def _draw_drafting(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
+        input_enabled = getattr(game, "is_human_turn", lambda: True)()
+
         def actor_label(player: str) -> str:
             try:
                 ai = getattr(game, "get_ai", lambda p: None)(player)
@@ -210,8 +212,8 @@ class Renderer:
         realm_rects = self.layout.place_row(realm_area, len(game.realm_draft_visuals), realm_area.centery)
         hero_rects = self.layout.place_row(hero_area, len(game.hero_draft_visuals), hero_area.centery)
 
-        realm_enabled = game.can_draft_card_type(game.current_drafter, "realm")
-        hero_enabled = game.can_draft_card_type(game.current_drafter, "hero")
+        realm_enabled = input_enabled and game.can_draft_card_type(game.current_drafter, "realm")
+        hero_enabled = input_enabled and game.can_draft_card_type(game.current_drafter, "hero")
 
         for idx, card_data in enumerate(game.realm_draft_visuals):
             self._draw_card_instance(
@@ -430,7 +432,9 @@ class Renderer:
             )
 
     def _draw_action_buttons(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler) -> None:
-        if game.pending_action is not None and game.pending_action["type"] == "choose_suit":
+        input_enabled = getattr(game, "is_human_turn", lambda: True)()
+
+        if input_enabled and game.pending_action is not None and game.pending_action["type"] == "choose_suit":
             area = self.layout.rects["effects_panel"]
             prompt = self.layout.fonts["tiny"].render("Choose a suit", True, self.theme.text_primary)
             self._render_text_box(screen, prompt, (area.centerx, area.y + int(area.h * 0.66)), fill=(18, 14, 22, 196), outline=(*self.theme.accent_gold, 120), radius=14, padding=(16, 8))
@@ -454,11 +458,11 @@ class Renderer:
             int(center.w * 0.19),
             int(center.h * 0.08),
         )
-        if game.play_phase == "DEFEND" and game.pending_action is None:
+        if input_enabled and game.play_phase == "DEFEND" and game.pending_action is None:
             button_id = "btn_wound"
             self._draw_button(screen, btn, "Take Wound", self.theme.accent_ember, input_handler.is_pressed(button_id))
             targets.append(HitTarget(button_id, btn, "concede_defense", {}))
-        elif game.play_phase == "REINFORCE" and game.pending_action is None:
+        elif input_enabled and game.play_phase == "REINFORCE" and game.pending_action is None:
             button_id = "btn_end"
             self._draw_button(screen, btn, "End Attack", self.theme.gondor, input_handler.is_pressed(button_id))
             targets.append(HitTarget(button_id, btn, "end_attack", {}))

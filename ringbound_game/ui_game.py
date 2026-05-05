@@ -22,21 +22,23 @@ class RingboundGame:
         pygame.display.set_caption("Ringbound: Battle for the One Ring")
         self.clock = pygame.time.Clock()
 
-        self.resource_root = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+        if hasattr(sys, "_MEIPASS"):
+            self.resource_root = sys._MEIPASS
+        else:
+            self.resource_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.music_tracks = discover_music_tracks(self.resource_root)
         self.music_enabled = False
         self.music_index = 0
 
-        base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-        self.db = load_cards(base_path)
+        self.db = load_cards(self.resource_root)
         self.all_suits = sorted({card["suit"] for card in self.db["realm_cards"]})
 
         # AI players: set via environment variables `RINGBOUND_P1_AI` / `RINGBOUND_P2_AI`
         self.p1_ai, self.p2_ai = configure_ai_from_env()
         self._last_ai_action = 0
-        self._ai_action_delay_ms = 220
+        self._ai_action_delay_ms = 850
         self._last_draft_action = 0
-        self._draft_action_delay_ms = 160
+        self._draft_action_delay_ms = 700
 
         self.ui = UIController((WINDOW_WIDTH, WINDOW_HEIGHT), self.resource_root)
         self._start_music()
@@ -135,6 +137,29 @@ class RingboundGame:
     def get_ai(self, player):
         return self.p1_ai if player == "P1" else self.p2_ai
 
+    def is_ai_player(self, player):
+        return player is not None and self.get_ai(player) is not None
+
+    def current_interaction_player(self):
+        if self.state == STATE_DRAFTING:
+            return self.current_drafter
+        if self.pending_action is not None:
+            if self.pending_action.get("type") == "choose_suit":
+                return self.pending_action.get("chooser", self.pending_action.get("owner", self.current_player))
+            return self.pending_action.get("owner", self.current_player)
+        return self.current_player
+
+    def is_human_turn(self):
+        player = self.current_interaction_player()
+        return player is not None and not self.is_ai_player(player)
+
+    def _arm_ai_delay(self, draft=False):
+        now = pygame.time.get_ticks()
+        if draft:
+            self._last_draft_action = now
+        else:
+            self._last_ai_action = now
+
     def get_player_realm_hand(self, player):
         return self.p1_hand if player == "P1" else self.p2_hand
 
@@ -152,6 +177,9 @@ class RingboundGame:
 
     def player_has_no_cards(self, player):
         return self.get_player_total_cards(player) == 0
+
+    def player_has_no_realm_cards(self, player):
+        return len(self.get_player_realm_hand(player)) == 0
 
     def is_hero_card(self, card_data):
         return "faction" in card_data
@@ -221,6 +249,8 @@ class RingboundGame:
             self.hero_draft_visuals.append(self.hero_deck.pop())
 
         self.status_message = f"{self.current_drafter} drafts first."
+        if self.is_ai_player(self.current_drafter):
+            self._arm_ai_delay(draft=True)
 
     def step_drafting(self):
         # Auto-resolve draft picks for AI players
@@ -293,6 +323,8 @@ class RingboundGame:
         self.current_drafter = "P2" if self.current_drafter == "P1" else "P1"
         self.status_message = f"{self.current_drafter} is drafting."
         self.update_draft_visuals()
+        if self.is_ai_player(self.current_drafter):
+            self._arm_ai_delay(draft=True)
 
     def check_draft_complete(self):
         if len(self.realm_draft_visuals) == 0 and len(self.hero_draft_visuals) == 0:
@@ -303,6 +335,8 @@ class RingboundGame:
             self.update_hand_visuals()
             self.state = STATE_PLAYING
             self.status_message = f"{self.attacker} opens the first attack."
+            if self.is_ai_player(self.current_player):
+                self._arm_ai_delay()
 
     def can_defend_with_card(self, defense_card, attack_card):
         if attack_card is None:
@@ -338,6 +372,28 @@ class RingboundGame:
             return True
         return attack_card["rank"] in valid_ranks
 
+    def current_player_has_attack_action(self):
+        if self.current_player != self.attacker or self.play_phase != "ATTACK":
+            return False
+        if any(self.can_attack_with_card(card) for card in self.get_player_realm_hand(self.current_player)):
+            return True
+        return any(
+            hero_card["id"] in {"legolas", "balrog"} and self.can_use_hero(hero_card)
+            for hero_card in self.get_player_hero_hand(self.current_player)
+        )
+
+    def can_end_attack(self):
+        if self.pending_action is not None:
+            return False
+        if self.play_phase == "REINFORCE":
+            return True
+        if self.play_phase != "ATTACK":
+            return False
+        return not self.current_player_has_attack_action()
+
+    def can_concede_defense(self):
+        return self.play_phase == "DEFEND" and self.pending_action is None
+
     def get_saruman_target_card(self):
         defender_hand = list(self.get_player_realm_hand(self.defender))
         if not defender_hand:
@@ -356,6 +412,7 @@ class RingboundGame:
         hero_id = hero_card["id"]
         realm_count = len(self.get_player_realm_hand(self.current_player))
         attack_card = self.get_current_attack_card()
+        legal_attack_exists = any(self.can_attack_with_card(card) for card in self.get_player_realm_hand(self.current_player))
 
         if hero_id == "aragorn":
             return self.current_player == self.attacker and self.play_phase in ("ATTACK", "REINFORCE") and bool(self.table_attacks)
@@ -376,7 +433,7 @@ class RingboundGame:
         if hero_id == "sauron":
             return self.current_player == self.attacker and self.play_phase == "ATTACK" and len(self.table_attacks) == 0 and self.revealed_hand is None
         if hero_id == "balrog":
-            return self.current_player == self.attacker and self.play_phase in ("ATTACK", "REINFORCE") and self.round_effects["balrog_active"] is None
+            return self.current_player == self.attacker and self.play_phase in ("ATTACK", "REINFORCE") and self.round_effects["balrog_active"] is None and legal_attack_exists
         if hero_id == "gollum":
             return self.current_player == self.attacker and self.play_phase in ("ATTACK", "REINFORCE") and not self.round_effects["trump_disabled"] and self.round_effects["temporary_trump_suit"] is None
         if hero_id == "wormtongue":
@@ -421,6 +478,19 @@ class RingboundGame:
                 self.current_player = prev
         return usable
 
+    def can_select_hero_attack_card(self, card_data):
+        if self.pending_action is None or self.pending_action["type"] != "hero_attack_card":
+            return False
+        if not self.is_realm_card(card_data):
+            return False
+        if card_data not in self.get_player_realm_hand(self.pending_action["owner"]):
+            return False
+
+        mode = self.pending_action["mode"]
+        if mode == "legolas_bonus":
+            return True
+        return self.can_attack_with_card(card_data)
+
     def step_ai(self):
         now = pygame.time.get_ticks()
         if now - getattr(self, "_last_ai_action", 0) < getattr(self, "_ai_action_delay_ms", 200):
@@ -438,6 +508,17 @@ class RingboundGame:
                 if suit in self.all_suits:
                     self.resolve_suit_choice(suit)
                     self._last_ai_action = now
+            elif self.pending_action.get("type") == "hero_attack_card":
+                owner = self.pending_action["owner"]
+                mode = self.pending_action["mode"]
+                options = list(self.get_player_realm_hand(owner))
+                if mode != "legolas_bonus":
+                    options = [card for card in options if self.can_attack_with_card(card)]
+                if options:
+                    action, payload = ai.choose_attack_action(self, owner, options, [])
+                    if action == "realm" and payload in options:
+                        self.resolve_hero_attack_card(payload)
+                        self._last_ai_action = now
             return
 
         # Attacker turn
@@ -465,11 +546,6 @@ class RingboundGame:
                         choice = ai.choose_saruman_exchange_card(self, player)
                         if choice in self.get_player_realm_hand(player):
                             self.resolve_saruman_exchange(choice)
-                elif hero_card["id"] in ("gollum", "wormtongue"):
-                    suit = ai.choose_suit(self, player, hero_card)
-                    if suit in self.all_suits:
-                        self.set_pending_action("choose_suit", hero_card, "AI choosing suit", mode=("gollum_trump" if hero_card["id"] == "gollum" else "wormtongue_block"))
-                        self.resolve_suit_choice(suit)
                 else:
                     self.attempt_hero_play(hero_card)
             elif action == "realm" and payload is not None:
@@ -500,8 +576,14 @@ class RingboundGame:
         self._last_ai_action = now
 
     def is_card_playable_in_hand(self, card_data):
+        if not self.is_human_turn():
+            return False
         if self.pending_action is not None:
-            return self.pending_action["type"] == "saruman_exchange" and self.is_realm_card(card_data)
+            if self.pending_action["type"] == "saruman_exchange":
+                return self.is_realm_card(card_data)
+            if self.pending_action["type"] == "hero_attack_card":
+                return self.can_select_hero_attack_card(card_data)
+            return False
         if self.is_hero_card(card_data):
             return self.can_use_hero(card_data)
         if self.play_phase == "DEFEND":
@@ -528,6 +610,8 @@ class RingboundGame:
             self.play_phase = "ATTACK"
             self.current_player = self.attacker
             self.status_message = f"{self.attacker} may lead a fresh attack."
+        if self.is_ai_player(self.current_player):
+            self._arm_ai_delay()
 
     def discard_card(self, card_data):
         self.discard_pile.append(card_data)
@@ -555,14 +639,17 @@ class RingboundGame:
         self.discard_card(discarded)
         return discarded
 
-    def set_pending_action(self, action_type, hero_card, prompt, **kwargs):
+    def set_pending_action(self, action_type, hero_card, prompt, chooser=None, current_player_override=None, **kwargs):
         self.pending_action = {
             "type": action_type,
             "hero": hero_card,
             "owner": self.current_player,
+            "chooser": chooser if chooser is not None else self.current_player,
             "prompt": prompt,
             **kwargs,
         }
+        if current_player_override is not None:
+            self.current_player = current_player_override
         self.status_message = prompt
         self.update_hand_visuals()
 
@@ -594,8 +681,10 @@ class RingboundGame:
             self.set_pending_action(
                 "choose_suit",
                 hero_card,
-                "Gollum: choose the suit that becomes trump for this round.",
+                "Gollum: defender chooses the suit that becomes trump for this round.",
                 mode="gollum_trump",
+                chooser=self.defender,
+                current_player_override=self.defender,
             )
             return
         if hero_id == "wormtongue":
@@ -606,19 +695,40 @@ class RingboundGame:
                 mode="wormtongue_block",
             )
             return
-
-        self.consume_hero_card(self.current_player, hero_card)
-
-        if hero_id == "legolas":
-            self.round_effects["legolas_bonus"] = 1
-            self.status_message = "Legolas is ready: your next attack this round can ignore reinforce rank."
-        elif hero_id == "gandalf":
-            self.resolve_gandalf()
-        elif hero_id == "galadriel":
+        if hero_id == "galadriel":
             previous_wounds = self.wounds[self.current_player]
+            self.consume_hero_card(self.current_player, hero_card)
             self.wounds[self.current_player] = max(0, previous_wounds - 2)
             healed = previous_wounds - self.wounds[self.current_player]
             self.status_message = f"Galadriel heals {healed} wound(s) for {self.current_player}."
+            self.pending_action = None
+            self.check_game_over()
+            if self.state != STATE_GAMEOVER:
+                self.update_hand_visuals()
+                if self.is_ai_player(self.current_player):
+                    self._arm_ai_delay()
+            return
+        if hero_id == "legolas":
+            self.set_pending_action(
+                "hero_attack_card",
+                hero_card,
+                "Legolas: choose one realm card to attack with now, ignoring rank restrictions.",
+                mode="legolas_bonus",
+            )
+            return
+        if hero_id == "balrog":
+            self.set_pending_action(
+                "hero_attack_card",
+                hero_card,
+                "Balrog: choose one realm card to attack with now.",
+                mode="balrog_attack",
+            )
+            return
+
+        self.consume_hero_card(self.current_player, hero_card)
+
+        if hero_id == "gandalf":
+            self.resolve_gandalf()
         elif hero_id == "frodo":
             self.round_effects["trump_disabled"] = True
             self.round_effects["temporary_trump_suit"] = None
@@ -634,14 +744,13 @@ class RingboundGame:
                 "target": self.get_opponent(self.current_player),
             }
             self.status_message = f"Sauron reveals {self.revealed_hand['target']}'s hand for this round."
-        elif hero_id == "balrog":
-            self.round_effects["balrog_active"] = self.current_player
-            self.status_message = "Balrog will inflict a wound if this round is fully defended."
 
         self.pending_action = None
         self.check_game_over()
         if self.state != STATE_GAMEOVER:
             self.update_hand_visuals()
+            if self.is_ai_player(self.current_player):
+                self._arm_ai_delay()
 
     def resolve_gandalf(self):
         attack_card = self.get_current_attack_card()
@@ -680,6 +789,8 @@ class RingboundGame:
 
         self.play_phase = "REINFORCE"
         self.current_player = self.attacker
+        if self.is_ai_player(self.current_player):
+            self._arm_ai_delay()
 
     def resolve_suit_choice(self, suit):
         hero_card = self.pending_action["hero"]
@@ -695,7 +806,10 @@ class RingboundGame:
             self.status_message = f"Wormtongue forbids the defender from playing {suit} this round."
 
         self.pending_action = None
+        self.current_player = owner
         self.update_hand_visuals()
+        if self.is_ai_player(self.current_player):
+            self._arm_ai_delay()
 
     def resolve_aragorn(self, attack_index):
         owner = self.pending_action["owner"]
@@ -721,6 +835,8 @@ class RingboundGame:
         self.sync_turn_after_table_change()
         self.status_message = "Aragorn returns an attack card to your hand."
         self.update_hand_visuals()
+        if self.is_ai_player(self.current_player):
+            self._arm_ai_delay()
 
     def resolve_saruman_exchange(self, chosen_card):
         hero_card = self.pending_action["hero"]
@@ -741,11 +857,17 @@ class RingboundGame:
         self.pending_action = None
         self.status_message = f"Saruman swaps {chosen_card['name']} for {target_card['name']}."
         self.update_hand_visuals()
+        if self.is_ai_player(self.current_player):
+            self._arm_ai_delay()
 
     def handle_hand_card_click(self, card_data):
         if self.pending_action is not None and self.pending_action["type"] == "saruman_exchange":
             if self.is_realm_card(card_data):
                 self.resolve_saruman_exchange(card_data)
+            return
+        if self.pending_action is not None and self.pending_action["type"] == "hero_attack_card":
+            if self.is_realm_card(card_data):
+                self.resolve_hero_attack_card(card_data)
             return
 
         if self.is_hero_card(card_data):
@@ -753,6 +875,33 @@ class RingboundGame:
             return
 
         self.attempt_play_card(card_data)
+
+    def resolve_hero_attack_card(self, chosen_card):
+        hero_card = self.pending_action["hero"]
+        owner = self.pending_action["owner"]
+        mode = self.pending_action["mode"]
+        if chosen_card not in self.get_player_realm_hand(owner):
+            return
+        if not self.can_select_hero_attack_card(chosen_card):
+            return
+
+        self.pending_action = None
+        self.current_player = owner
+        self.consume_hero_card(owner, hero_card)
+        if mode == "legolas_bonus":
+            self.round_effects["legolas_bonus"] = 1
+        elif mode == "balrog_attack":
+            self.round_effects["balrog_active"] = owner
+
+        self.attempt_play_card(chosen_card)
+        if self.state != STATE_GAMEOVER:
+            if mode == "legolas_bonus":
+                self.status_message = f"Legolas joins the attack with {chosen_card['name']}."
+            else:
+                self.status_message = f"Balrog charges with {chosen_card['name']}."
+            self.update_hand_visuals()
+            if self.is_ai_player(self.current_player):
+                self._arm_ai_delay()
 
     def attempt_play_card(self, card_data):
         current_hand = self.get_player_realm_hand(self.current_player)
@@ -773,6 +922,8 @@ class RingboundGame:
             self.status_message = f"{self.defender} must defend {card_data['name']}."
             self.update_hand_visuals()
             self.check_game_over()
+            if self.state != STATE_GAMEOVER and self.is_ai_player(self.current_player):
+                self._arm_ai_delay()
 
         elif self.play_phase == "DEFEND":
             self.table_defenses.append(card_data)
@@ -784,6 +935,8 @@ class RingboundGame:
                 self.current_player = self.attacker
                 self.status_message = f"{self.attacker} may reinforce or end the attack."
                 self.update_hand_visuals()
+                if self.is_ai_player(self.current_player):
+                    self._arm_ai_delay()
             self.check_game_over()
 
     def concede_defense(self):
@@ -833,6 +986,8 @@ class RingboundGame:
             else:
                 self.status_message = f"{self.attacker} leads the next round."
             self.update_hand_visuals()
+            if self.is_ai_player(self.current_player):
+                self._arm_ai_delay()
 
     def draw_back_to_six(self, player):
         hand = self.get_player_realm_hand(player)
@@ -906,6 +1061,8 @@ class RingboundGame:
             return
 
         if action == "pick_draft_card" and self.state == STATE_DRAFTING:
+            if not self.is_human_turn():
+                return
             card_index = payload.get("card_index")
             card_type = payload.get("card_type")
             if isinstance(card_index, int) and card_type in ("realm", "hero"):
@@ -913,6 +1070,8 @@ class RingboundGame:
             return
 
         if action == "select_aragorn_target" and self.state == STATE_PLAYING and self.pending_action is not None:
+            if not self.is_human_turn():
+                return
             if self.pending_action.get("type") == "aragorn_return":
                 attack_index = payload.get("attack_index")
                 if isinstance(attack_index, int):
@@ -920,6 +1079,8 @@ class RingboundGame:
             return
 
         if action == "choose_suit" and self.state == STATE_PLAYING and self.pending_action is not None:
+            if not self.is_human_turn():
+                return
             if self.pending_action.get("type") == "choose_suit":
                 suit = payload.get("suit")
                 if suit in self.all_suits:
@@ -927,6 +1088,8 @@ class RingboundGame:
             return
 
         if action == "select_hand_card" and self.state == STATE_PLAYING:
+            if not self.is_human_turn():
+                return
             if self.pending_action is not None and self.pending_action.get("type") in ("aragorn_return", "choose_suit"):
                 return
             card_index = payload.get("card_index")
@@ -935,11 +1098,15 @@ class RingboundGame:
             return
 
         if action == "concede_defense" and self.state == STATE_PLAYING:
+            if not self.is_human_turn():
+                return
             if self.play_phase == "DEFEND" and self.pending_action is None:
                 self.concede_defense()
             return
 
         if action == "end_attack" and self.state == STATE_PLAYING:
+            if not self.is_human_turn():
+                return
             if self.play_phase == "REINFORCE" and self.pending_action is None:
                 self.end_round(defender_took_wound=False, pickup_defenses=False)
             return
