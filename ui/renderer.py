@@ -131,16 +131,37 @@ class Renderer:
         prompt = self.layout.fonts["heading"].render("Click to start draft", True, self.theme.text_primary)
 
         self._render_text_box(screen, title, (center[0], int(center[1] * 0.78)), fill=(24, 18, 30, 204), outline=(*self.theme.accent_gold, 150), radius=24, padding=(26, 18))
-        prompt_rect = prompt.get_rect(center=(center[0], int(center[1] * 1.15)))
+        prompt_rect = prompt.get_rect(center=(center[0], int(center[1] * 1.05)))
         self._render_text_box(screen, prompt, prompt_rect.center, fill=(18, 14, 22, 190), outline=(*self.theme.border_subtle, 170), radius=20, padding=(22, 14))
 
-        targets.append(HitTarget("splash_start", self.layout.rects["screen"], "start_game", {}))
+        # Splash controls: choose play mode
+        btn_w = int(self.layout.width * 0.28)
+        btn_h = int(self.layout.height * 0.065)
+        gap = int(self.layout.height * 0.02)
+        start_y = int(center[1] * 1.20)
+
+        modes = [
+            ("Two Players", {"mode": "2p"}),
+            ("Vs Random AI", {"mode": "ai", "p2_ai": "Random"}),
+            ("Vs Greedy AI", {"mode": "ai", "p2_ai": "Greedy"}),
+            ("Vs Strategic AI", {"mode": "ai", "p2_ai": "Strategic"}),
+        ]
+
+        for i, (label, payload) in enumerate(modes):
+            rect = pygame.Rect(center[0] - btn_w // 2, start_y + i * (btn_h + gap), btn_w, btn_h)
+            pressed = False
+            self._draw_button(screen, rect, label, self.theme.accent_gold if i == 0 else self.theme.gondor, pressed)
+            targets.append(HitTarget(f"splash_{i}", rect, "start_game", dict(payload)))
 
     def _draw_game_over(self, screen: pygame.Surface, game: Any, targets: list[HitTarget]) -> None:
         center = self.layout.rects["screen"].center
         title = self.layout.fonts["title"].render("GAME OVER", True, self.theme.accent_ember)
         winner = getattr(game, "winner", "P1")
-        winner_text = self.layout.fonts["phase"].render(f"{winner} claims the One Ring", True, self.theme.accent_gold)
+        try:
+            winner_label = ("AI" if getattr(game, "get_ai", lambda p: None)(winner) is not None else "Player")
+        except Exception:
+            winner_label = winner
+        winner_text = self.layout.fonts["phase"].render(f"{winner_label} claims the One Ring", True, self.theme.accent_gold)
         prompt = self.layout.fonts["label"].render("Click to return to splash", True, self.theme.text_primary)
 
         self._render_text_box(screen, title, (center[0], int(center[1] * 0.72)), fill=(30, 18, 18, 205), outline=(*self.theme.accent_ember, 150), radius=24, padding=(26, 18))
@@ -150,11 +171,20 @@ class Renderer:
         targets.append(HitTarget("gameover_restart", self.layout.rects["screen"], "restart_game", {}))
 
     def _draw_drafting(self, screen: pygame.Surface, game: Any, targets: list[HitTarget], input_handler: InputHandler, now: int) -> None:
-        heading = self.layout.fonts["phase"].render(f"Drafting: {game.current_drafter}", True, self.theme.accent_gold)
+        def actor_label(player: str) -> str:
+            try:
+                ai = getattr(game, "get_ai", lambda p: None)(player)
+            except Exception:
+                ai = None
+            return "AI" if ai is not None else "Player"
+
+        heading = self.layout.fonts["phase"].render(f"Drafting: {actor_label(game.current_drafter)}", True, self.theme.accent_gold)
         self._render_text_box(screen, heading, (self.layout.rects["screen"].centerx, int(self.layout.height * 0.06)), fill=(24, 18, 30, 196), outline=(*self.theme.accent_gold, 140), radius=22, padding=(24, 14))
 
-        p1 = self.layout.fonts["small"].render(f"P1 Draft: {len(game.p1_hand)} realm, {len(game.p1_heroes)} hero", True, self.theme.text_primary)
-        p2 = self.layout.fonts["small"].render(f"P2 Draft: {len(game.p2_hand)} realm, {len(game.p2_heroes)} hero", True, self.theme.text_primary)
+        p1_label = actor_label("P1")
+        p2_label = actor_label("P2")
+        p1 = self.layout.fonts["small"].render(f"{p1_label} Draft: {len(game.p1_hand)} realm, {len(game.p1_heroes)} hero", True, self.theme.text_primary)
+        p2 = self.layout.fonts["small"].render(f"{p2_label} Draft: {len(game.p2_hand)} realm, {len(game.p2_heroes)} hero", True, self.theme.text_primary)
         draft_rule = self.layout.fonts["tiny"].render("Draft limit: 6 realm cards and 4 hero cards per player", True, self.theme.text_primary)
         self._render_text_box(screen, p1, (int(self.layout.width * 0.16), int(self.layout.height * 0.04)), fill=(18, 14, 22, 188), outline=(*self.theme.border_subtle, 150), radius=18, padding=(18, 10))
         self._render_text_box(screen, p2, (int(self.layout.width * 0.84), int(self.layout.height * 0.04)), fill=(18, 14, 22, 188), outline=(*self.theme.border_subtle, 150), radius=18, padding=(18, 10))
@@ -215,10 +245,14 @@ class Renderer:
         top = self.layout.rects["top_bar"]
         self._draw_translucent_rect(screen, top, (18, 14, 22, 172), (*self.theme.border_subtle, 180), max(1, int(top.h * 0.05)), radius=max(1, int(top.h * 0.14)))
 
-        self._draw_player_header(screen, "P1", game.wounds.get("P1", 0), pygame.Rect(0, 0, int(self.layout.width * 0.32), top.height), now)
-        self._draw_player_header(screen, "P2", game.wounds.get("P2", 0), pygame.Rect(int(self.layout.width * 0.68), 0, int(self.layout.width * 0.32), top.height), now)
+        self._draw_player_header(screen, "P1", game.wounds.get("P1", 0), pygame.Rect(0, 0, int(self.layout.width * 0.32), top.height), now, game)
+        self._draw_player_header(screen, "P2", game.wounds.get("P2", 0), pygame.Rect(int(self.layout.width * 0.68), 0, int(self.layout.width * 0.32), top.height), now, game)
 
-        phase_text = f"{game.current_player} - {game.play_phase}"
+        try:
+            current_label = ("AI" if getattr(game, "get_ai", lambda p: None)(game.current_player) is not None else "Player")
+        except Exception:
+            current_label = game.current_player
+        phase_text = f"{current_label} - {game.play_phase}"
         phase_color = self.theme.accent_gold if now < self._phase_flash_until else self.theme.text_primary
         phase_surface = self.layout.fonts["heading"].render(phase_text, True, phase_color)
         screen.blit(phase_surface, phase_surface.get_rect(center=top.center))
@@ -233,9 +267,25 @@ class Renderer:
         self._draw_hand(screen, game, targets, input_handler, now)
         self._draw_action_buttons(screen, game, targets, input_handler)
 
-    def _draw_player_header(self, screen: pygame.Surface, player: str, wounds: int, rect: pygame.Rect, now: int) -> None:
-        label = self.layout.fonts["small"].render(player, True, self.theme.text_primary)
+    def _draw_player_header(self, screen: pygame.Surface, player: str, wounds: int, rect: pygame.Rect, now: int, game: Any | None = None) -> None:
+        try:
+            ai = getattr(game, "get_ai", lambda p: None)(player)
+        except Exception:
+            ai = None
+        display = "AI" if ai is not None else "Player"
+        label = self.layout.fonts["small"].render(display, True, self.theme.text_primary)
         screen.blit(label, (rect.x + int(rect.w * 0.05), rect.y + int(rect.h * 0.20)))
+
+        # If this player is controlled by AI, display AI tag
+        ai = None
+        if game is not None:
+            try:
+                ai = getattr(game, "get_ai", lambda p: None)(player)
+            except Exception:
+                ai = None
+        if ai is not None:
+            ai_label = self.layout.fonts["tiny"].render(f"AI: {ai.name}", True, self.theme.text_muted)
+            screen.blit(ai_label, (rect.x + int(rect.w * 0.05), rect.y + int(rect.h * 0.52)))
 
         pip_r = max(2, int(self.layout.height * 0.008))
         start_x = rect.x + int(rect.w * 0.22)
@@ -345,7 +395,12 @@ class Renderer:
         hand_area = self.layout.rects["hand_area"]
         self._draw_translucent_rect(screen, hand_area, (18, 14, 22, 172), (*self.theme.border_subtle, 150), max(1, int(hand_area.h * 0.05)), radius=max(1, int(hand_area.h * 0.08)))
 
-        caption = self.layout.fonts["label"].render(f"{game.current_player} Hand", True, self.theme.text_primary)
+        try:
+            ai = getattr(game, "get_ai", lambda p: None)(game.current_player)
+        except Exception:
+            ai = None
+        caption_text = ("AI" if ai is not None else "Player") + " Hand"
+        caption = self.layout.fonts["label"].render(caption_text, True, self.theme.text_primary)
         self._render_text_box(screen, caption, (hand_area.centerx, hand_area.y + int(hand_area.h * 0.12)), fill=(22, 18, 28, 196), outline=(*self.theme.accent_gold, 120), radius=16, padding=(18, 10))
 
         card_w, card_h = self.layout.card_size()

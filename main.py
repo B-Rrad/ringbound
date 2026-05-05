@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pygame
 
+from ai_manager import make_ai, configure_ai_from_env
+from resource_manager import discover_music_tracks, load_cards
+
 from settings import *
 from ui import UIController
 
@@ -22,24 +25,26 @@ class RingboundGame:
         self.clock = pygame.time.Clock()
 
         self.resource_root = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-        self.music_tracks = self._discover_music_tracks()
+        self.music_tracks = discover_music_tracks(self.resource_root)
         self.music_enabled = False
         self.music_index = 0
 
-        self.db = {"realm_cards": [], "hero_cards": []}
-        self.all_suits = []
-        self.load_database()
+        base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+        self.db = load_cards(base_path)
+        self.all_suits = sorted({card["suit"] for card in self.db["realm_cards"]})
+
+        # AI players: set via environment variables `RINGBOUND_P1_AI` / `RINGBOUND_P2_AI`
+        self.p1_ai, self.p2_ai = configure_ai_from_env()
+        self._last_ai_action = 0
+        self._ai_action_delay_ms = 220
+        self._last_draft_action = 0
+        self._draft_action_delay_ms = 160
 
         self.ui = UIController((WINDOW_WIDTH, WINDOW_HEIGHT), self.resource_root)
         self._start_music()
         self.reset_game_state()
 
-    def _discover_music_tracks(self):
-        music_dir = Path(self.resource_root) / "music"
-        if not music_dir.is_dir():
-            return []
 
-        return [str(path) for path in sorted(music_dir.iterdir()) if path.is_file() and path.suffix.lower() in self.MUSIC_EXTENSIONS]
 
     def _start_music(self):
         if not self.music_tracks:
@@ -80,20 +85,7 @@ class RingboundGame:
 
         self._play_music_track(self.music_index + 1)
 
-    def load_database(self):
-        base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-        try:
-            with open(os.path.join(base_path, "data", "realm_cards.json"), "r", encoding="utf-8") as f:
-                self.db["realm_cards"] = json.load(f)["realm_cards"]
-        except FileNotFoundError:
-            pass
-        try:
-            with open(os.path.join(base_path, "data", "hero_cards.json"), "r", encoding="utf-8") as f:
-                self.db["hero_cards"] = json.load(f)["hero_cards"]
-        except FileNotFoundError:
-            pass
 
-        self.all_suits = sorted({card["suit"] for card in self.db["realm_cards"]})
 
     def new_round_effects(self):
         return {
@@ -140,6 +132,11 @@ class RingboundGame:
         self.revealed_hand = None
         self.status_message = "Click to start the draft."
 
+
+
+    def get_ai(self, player):
+        return self.p1_ai if player == "P1" else self.p2_ai
+
     def get_player_realm_hand(self, player):
         return self.p1_hand if player == "P1" else self.p2_hand
 
@@ -174,6 +171,7 @@ class RingboundGame:
     def is_trump_card(self, card_data):
         effective_trump = self.get_effective_trump_suit()
         return effective_trump is not None and card_data.get("suit") == effective_trump
+
 
     def get_current_attack_card(self):
         if len(self.table_attacks) > len(self.table_defenses):
@@ -225,6 +223,43 @@ class RingboundGame:
             self.hero_draft_visuals.append(self.hero_deck.pop())
 
         self.status_message = f"{self.current_drafter} drafts first."
+
+    def step_drafting(self):
+        # Auto-resolve draft picks for AI players
+        if self.state != STATE_DRAFTING:
+            return
+
+        drafter = self.current_drafter
+        ai = self.get_ai(drafter)
+        if ai is None:
+            return
+
+        now = pygame.time.get_ticks()
+        if now - self._last_draft_action < self._draft_action_delay_ms:
+            return
+
+        # Prefer realm picks until full, otherwise pick hero
+        pick_type = None
+        if self.can_draft_card_type(drafter, "realm") and self.realm_draft_visuals:
+            pick_type = "realm"
+            # choose highest-rank realm
+            best_idx = 0
+            best_rank = -999
+            for idx, card in enumerate(self.realm_draft_visuals):
+                rank = card.get("rank", 0)
+                if rank > best_rank:
+                    best_rank = rank
+                    best_idx = idx
+            pick_index = best_idx
+        elif self.can_draft_card_type(drafter, "hero") and self.hero_draft_visuals:
+            pick_type = "hero"
+            # choose random hero
+            pick_index = random.randrange(len(self.hero_draft_visuals))
+        else:
+            return
+
+        self.attempt_draft(pick_index, pick_type)
+        self._last_draft_action = now
 
     def can_draft_card_type(self, player, card_type):
         if player is None:
@@ -357,6 +392,114 @@ class RingboundGame:
         current_realm_hand = self.get_player_realm_hand(self.current_player)
         current_hero_hand = self.get_player_hero_hand(self.current_player)
         self.active_hand_visuals = current_realm_hand + current_hero_hand
+
+    # AI compatibility helpers (used by balance_analysis AIs)
+    def get_known_opponent_cards(self, player):
+        if self.revealed_hand is not None and self.revealed_hand.get("viewer") == player:
+            return list(self.get_player_realm_hand(self.get_opponent(player)))
+        return None
+
+    def legal_attack_cards(self, player):
+        return [card for card in self.get_player_realm_hand(player) if self.can_attack_with_card(card)]
+
+    def legal_defense_cards(self, player):
+        attack_card = None
+        if len(self.table_attacks) > len(self.table_defenses):
+            attack_card = self.table_attacks[-1]
+        if attack_card is None:
+            return []
+        return [card for card in self.get_player_realm_hand(player) if self.can_defend_with_card(card, attack_card)]
+
+    def usable_heroes(self, player):
+        heroes = list(self.get_player_hero_hand(player))
+        usable = []
+        for hero in heroes:
+            prev = self.current_player
+            self.current_player = player
+            try:
+                if self.can_use_hero(hero):
+                    usable.append(hero)
+            finally:
+                self.current_player = prev
+        return usable
+
+    def step_ai(self):
+        now = pygame.time.get_ticks()
+        if now - getattr(self, "_last_ai_action", 0) < getattr(self, "_ai_action_delay_ms", 200):
+            return
+        if self.state != STATE_PLAYING:
+            return
+        player = self.current_player
+        ai = self.get_ai(player)
+        if ai is None:
+            return
+        if self.pending_action is not None:
+            if self.pending_action.get("type") == "choose_suit":
+                hero = self.pending_action["hero"]
+                suit = ai.choose_suit(self, player, hero)
+                if suit in self.all_suits:
+                    self.resolve_suit_choice(suit)
+                    self._last_ai_action = now
+            return
+
+        # Attacker turn
+        if player == self.attacker and self.play_phase in ("ATTACK", "REINFORCE"):
+            legal_realm = self.legal_attack_cards(player)
+            usable = self.usable_heroes(player)
+            if self.play_phase == "ATTACK":
+                action, payload = ai.choose_attack_action(self, player, legal_realm, usable)
+            else:
+                action, payload = ai.choose_reinforce_action(self, player, legal_realm, usable)
+
+            if action == "hero" and payload is not None:
+                hero_card = payload if isinstance(payload, dict) else next((h for h in self.get_player_hero_hand(player) if h["id"] == payload), None)
+                if hero_card is None:
+                    self._last_ai_action = now
+                    return
+                if hero_card["id"] == "aragorn":
+                    target = ai.choose_aragorn_target(self, player)
+                    if target in self.table_attacks:
+                        idx = self.table_attacks.index(target)
+                        self.resolve_aragorn(idx)
+                elif hero_card["id"] == "saruman":
+                    target = self.get_saruman_target_card()
+                    if target is not None:
+                        choice = ai.choose_saruman_exchange_card(self, player)
+                        if choice in self.get_player_realm_hand(player):
+                            self.resolve_saruman_exchange(choice)
+                elif hero_card["id"] in ("gollum", "wormtongue"):
+                    suit = ai.choose_suit(self, player, hero_card)
+                    if suit in self.all_suits:
+                        self.set_pending_action("choose_suit", hero_card, "AI choosing suit", mode=("gollum_trump" if hero_card["id"] == "gollum" else "wormtongue_block"))
+                        self.resolve_suit_choice(suit)
+                else:
+                    self.attempt_hero_play(hero_card)
+            elif action == "realm" and payload is not None:
+                self.attempt_play_card(payload)
+            else:
+                # pass/end attack
+                if self.play_phase == "REINFORCE":
+                    self.end_round(False, False)
+                else:
+                    self.end_round(False, False)
+
+            self._last_ai_action = now
+            return
+
+        # Defender turn
+        legal_realm = self.legal_defense_cards(player)
+        usable = [h for h in self.usable_heroes(player) if h["id"] in {"gandalf", "galadriel", "boromir"}]
+        action, payload = ai.choose_defense_action(self, player, legal_realm, usable)
+        if action == "hero" and payload is not None:
+            hero_card = payload if isinstance(payload, dict) else next((h for h in self.get_player_hero_hand(player) if h["id"] == payload), None)
+            if hero_card is not None:
+                self.attempt_hero_play(hero_card)
+        elif action == "realm" and payload is not None:
+            self.attempt_play_card(payload)
+        else:
+            self.concede_defense()
+
+        self._last_ai_action = now
 
     def is_card_playable_in_hand(self, card_data):
         if self.pending_action is not None:
@@ -741,6 +884,21 @@ class RingboundGame:
         payload = intent.payload
 
         if action == "start_game" and self.state == STATE_SPLASH:
+            # payload may specify play mode and AI choices
+            mode = payload.get("mode")
+            # allow explicit AI selection for either player
+            p1_choice = payload.get("p1_ai")
+            p2_choice = payload.get("p2_ai")
+
+            if mode == "2p":
+                self.p1_ai = None
+                self.p2_ai = None
+            else:
+                if p1_choice is not None:
+                    self.p1_ai = make_ai(p1_choice)
+                if p2_choice is not None:
+                    self.p2_ai = make_ai(p2_choice)
+
             self.setup_game()
             self.state = STATE_DRAFTING
             return
@@ -809,6 +967,16 @@ class RingboundGame:
     def run(self):
         while True:
             self.handle_events()
+            # Allow AI players to draft and act each frame
+            try:
+                self.step_drafting()
+            except Exception:
+                pass
+
+            try:
+                self.step_ai()
+            except Exception:
+                pass
             self.ui.draw(self.screen, self)
             pygame.display.flip()
             self.clock.tick(FPS)
