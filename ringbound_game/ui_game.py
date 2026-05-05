@@ -6,6 +6,7 @@ import pygame
 
 from ai_manager import make_ai, configure_ai_from_env
 from resource_manager import discover_music_tracks, load_cards
+from .music_manager import MusicManager
 
 from settings import *
 from ui import UIController
@@ -13,8 +14,6 @@ from ui import UIController
 class RingboundGame:
     MAX_REALM_CARDS = 6
     MAX_HERO_CARDS = 4
-    MUSIC_END_EVENT = pygame.USEREVENT + 1
-    MUSIC_EXTENSIONS = (".mp3",)
 
     def __init__(self):
         pygame.init()
@@ -26,9 +25,9 @@ class RingboundGame:
             self.resource_root = sys._MEIPASS
         else:
             self.resource_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.music_tracks = discover_music_tracks(self.resource_root)
-        self.music_enabled = False
-        self.music_index = 0
+        
+        music_tracks = discover_music_tracks(self.resource_root)
+        self.music_manager = MusicManager(music_tracks)
 
         self.db = load_cards(self.resource_root)
         self.all_suits = sorted({card["suit"] for card in self.db["realm_cards"]})
@@ -47,43 +46,14 @@ class RingboundGame:
 
 
     def _start_music(self):
-        if not self.music_tracks:
+        if not self.music_manager.shuffled_tracks:
             return
 
-        try:
-            pygame.mixer.init()
-            pygame.mixer.music.set_endevent(self.MUSIC_END_EVENT)
-        except pygame.error:
-            self.music_enabled = False
-            return
-
-        self.music_enabled = True
-        self.music_index = 0
-        self._play_music_track(self.music_index)
-
-    def _play_music_track(self, track_index):
-        if not self.music_enabled or not self.music_tracks:
-            return
-
-        track_count = len(self.music_tracks)
-        for offset in range(track_count):
-            candidate_index = (track_index + offset) % track_count
-            track_path = self.music_tracks[candidate_index]
-            try:
-                pygame.mixer.music.load(track_path)
-                pygame.mixer.music.play()
-                self.music_index = candidate_index
-                return
-            except pygame.error:
-                continue
-
-        self.music_enabled = False
+        if self.music_manager.initialize_mixer():
+            self.music_manager.start_playback()
 
     def _advance_music(self):
-        if not self.music_enabled or not self.music_tracks:
-            return
-
-        self._play_music_track(self.music_index + 1)
+        self.music_manager.advance_track()
 
 
 
@@ -1018,7 +988,7 @@ class RingboundGame:
                 pygame.quit()
                 sys.exit()
 
-            if event.type == self.MUSIC_END_EVENT:
+            if event.type == MusicManager.MUSIC_END_EVENT:
                 self._advance_music()
                 continue
 
